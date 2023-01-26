@@ -2,7 +2,7 @@ FROM ros:humble-ros-base-jammy
 
 ARG PARENTDIR
 
-WORKDIR /root/utfr_ws
+WORKDIR /root/4bf_ws
 
 USER root
 
