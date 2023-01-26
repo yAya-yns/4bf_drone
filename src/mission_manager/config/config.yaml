@@ -1,0 +1,4 @@
+mission_manager: # Name of Module
+  ros__parameters:
+    update_rate : 1000.0 #[ms]
+    heartbeat_modules : ["control_systems","navigation"] # critical modules to monitor

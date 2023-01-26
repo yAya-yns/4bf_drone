@@ -1,0 +1,10 @@
+perception_node: # Name of Node
+  ros__parameters:
+    left_camera_topic : '/left_camera_node/images' # TODO - Replace and sync with util::Topics
+    cone_detections_topic : 'perception/cone_detections'
+    baseline : 10.0
+    update_rate : 1000.0 #[ms]
+    distortion : [-0.26170828446607286, 0.109830602711457, -0.0009754103281966483, 0.0015736897048436397, -0.027459437237028456]
+    intrinsics : [1109.0679923556017, 0.0, 725.8461303542504, 0.0, 1106.1270765104496, 572.1637280271174, 0.0, 0.0, 1.0]
+
+

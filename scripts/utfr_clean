@@ -1,0 +1,6 @@
+#!/bin/bash
+
+#Remove all built files
+rm -r /root/utfr_ws/install 
+rm -r /root/utfr_ws/build
+rm -r /root/utfr_ws/log

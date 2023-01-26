@@ -1,0 +1,28 @@
+#!/bin/bash
+
+# Make sure latest version is built:
+CI="${1:-0}"
+
+echo "==========================================="
+echo "=             Starting Test!              ="
+echo "==========================================="
+
+# Run colcon test 
+colcon test --return-code-on-test-failure --packages-select control_systems mapping mission_manager navigation perception utfr_common
+
+if [ "$?" -eq 0 ]; then # Build Success
+  echo "==========================================="
+  echo "=          Unit Tests Successful!         ="
+  echo "==========================================="
+  if [ "$CI" -eq 1 ]; then # if used in ci - return code
+    exit 0
+  fi
+else
+  colcon test-result --verbose
+  echo "==========================================="
+  echo "=  Test Failed - Please check above logs  ="
+  echo "==========================================="
+  if [ "$CI" -eq 1 ]; then # if used in ci - return code
+    exit 1
+  fi
+fi

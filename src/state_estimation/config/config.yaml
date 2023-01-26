@@ -1,0 +1,8 @@
+# publisher/subscriber for state estimation 
+# could be used for frame transforms? 
+
+state_estimation_node:  # node name
+  ros__parameters:
+    publish_string : "Message Number : "
+    update_rate : 1000.0 #[ms] #node loop period
+    heartbeat_modules : ["control_systems","state_estimation"] # critical modules to monitor
