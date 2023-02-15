@@ -1,6 +1,6 @@
 #!/bin/bash -u
 
-# run_container for utfr_dv
+# run_container for jetson
 # maintainer - kelvin cui
 # email - kelvinwhcui@gmail.com
 
@@ -33,7 +33,7 @@ then
     docker build \
         --build-arg PARENTDIR=$PARENTDIR \
         -t $IMAGE_NAME \
-        -f $PARENTDIR/docker/Dockerfile \
+        -f $PARENTDIR/docker/DockerfileJetson \
         $PARENTDIR
 fi
 
