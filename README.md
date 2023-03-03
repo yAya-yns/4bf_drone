@@ -23,3 +23,10 @@ https://github.com/utiasSTARS/ROB498-flight
 * If we ever mention the need to rebuild docker, this can be done with `source ./docker/rebuild_docker`
 
 </details>
+
+<details>
+  <summary>Useful Command</summary>
+
+### Setting up Docker
+  
+</details>
