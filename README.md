@@ -27,6 +27,14 @@ https://github.com/utiasSTARS/ROB498-flight
 <details>
   <summary>Useful Command</summary>
 
-### Setting up Docker
+### ssh to Jetson
+  ```
+  ssh rob498@10.4.0.113
+  pw: rob498
+  ```
+### Bring up:
+  ```
+  
+  ```
   
 </details>
