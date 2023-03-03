@@ -1,5 +1,7 @@
 # 4bf_drone
 
+https://github.com/utiasSTARS/ROB498-flight
+
 <details>
   <summary>Setting up Docker</summary>
 
