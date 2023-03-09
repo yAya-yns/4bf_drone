@@ -1,5 +1,0 @@
-navigation:  # Name of Node
-  ros__parameters:
-    update_rate : 33.33 #[ms]
-    mission_path : "/paths/accel_coords.csv" #[filepath]
-    target_radius : 1 #[m]

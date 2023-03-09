@@ -1,0 +1,12 @@
+#!/bin/bash -u
+(cd root/catkin_ws/src;
+  git clone -b noetic-devel \
+https://github.com/ROBOTIS-GIT/turtlebot3_simulations.git
+);
+
+pip install scipy
+pip install pygame
+pip install scikit-image
+pip install matplotlib
+
+source /root/catkin_ws/scripts/build
