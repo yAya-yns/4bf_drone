@@ -78,10 +78,11 @@ class CommNode:
       return EmptyResponse()
 
   # Our functions:
-
-  # Set Drone Position, publishing to waypoint target mavros topic
-  #
-  # @param[in] geometry_msgs pose in FLU frame, [m/rad]
+  '''
+  *! Set Drone Position, publishing to waypoint target mavros topic
+  *
+  *  @param[in] geometry_msgs pose in FLU frame, [m/rad]
+  '''
   def set_position(self, pose):
       msg = PoseStamped()
       msg.pose = pose
