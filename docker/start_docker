@@ -1,6 +1,6 @@
 #!/bin/bash -u
 
-# run_container for rob521
+# run_container for rob498
 # maintainer - kelvin cui
 
 # Get Current Directory
@@ -16,8 +16,8 @@ DIR=$( cd -P "$( dirname "$SOURCE" )" >/dev/null 2>&1 && pwd )
 PARENTDIR=${DIR%%/docker*}
 SOURCE="$PARENTDIR/src"
 
-CONTAINER_NAME="default_rob521_ros_container"
-IMAGE_NAME="default_rob521_ros_image"
+CONTAINER_NAME="default_rob498_ros_container"
+IMAGE_NAME="default_rob498_ros_image"
 
 #Allow docker to connect to local display
 xhost -local:root 1>/dev/null 2>&1

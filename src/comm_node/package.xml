@@ -6,8 +6,8 @@
     communications node for capstone
   </description>
   <license>Apache 2.0</license>
-  <author email="yuxuansherry.chen@mail.utoronto.ca">sherry</author>
-  <maintainer email="yuxuansherry.chen@mail.utoronto.ca">sherry</maintainer>
+  <author email="test@whoknows.com">whoknows</author>
+  <maintainer email="test@whoknows.com">whoknows</maintainer>
   <buildtool_depend>catkin</buildtool_depend>
   <depend>rospy</depend>
   <depend>std_msgs</depend>

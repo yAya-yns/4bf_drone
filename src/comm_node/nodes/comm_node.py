@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 import rospy
 from std_srvs.srv import Empty, EmptyResponse
 
@@ -38,7 +39,7 @@ def comm_node():
     print('The TAs will test these service calls prior to flight')
     print('Your own code should be integrated into this node')
     
-    node_name = 'rob498_drone_XX'
+    node_name = 'rob498_drone_13'
     rospy.init_node(node_name) 
     srv_launch = rospy.Service(node_name + '/comm/launch', Empty, callback_launch)
     srv_test = rospy.Service(node_name + '/comm/test', Empty, callback_test)
