@@ -1,3 +1,0 @@
-mapping: # Name of Module
-  ros__parameters:
-    update_rate : 33.33 #[ms]

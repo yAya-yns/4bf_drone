@@ -1,0 +1,18 @@
+<?xml version="1.0"?>
+<package>
+  <name>bringup</name>
+  <version>1.0.10</version>
+  <description>Package contains bringup scripts for drone</description>
+  <license>Apache 2.0</license>
+  <license>Apache 2.0</license>
+  <author email="test@whoknows.com">whoknows</author>
+  <maintainer email="test@whoknows.com">whoknows</maintainer>
+
+  <buildtool_depend>catkin</buildtool_depend>
+
+  <test_depend>roslaunch</test_depend>
+  <test_depend>rostest</test_depend>
+
+  <export>
+  </export>
+</package>
