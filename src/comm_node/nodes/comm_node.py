@@ -177,15 +177,15 @@ class CommNode:
             if self.curr_pose.position.z < self.ground_height:
                 print('on ground and can recieve pose measurements')
                 print('TEST SUCCESS')
-                return 1
+                return EmptyResponse()
             else:
                 print('not on the ground. Cannot start')
                 print('TEST FAIL')
-                return 0
+                return EmptyResponse()
         else:
             print('CANNOT recieve odom measurements')
             print('TEST FAIL')
-            return 0
+            return EmptyResponse()
       
 
     def handle_land(self):
