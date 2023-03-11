@@ -20,10 +20,14 @@ class CommNode:
         srv_land = rospy.Service(node_name + '/comm/land', Empty, self.callback_land)
         srv_abort = rospy.Service(node_name + '/comm/abort', Empty, self.callback_abort)
 
+        rospy.wait_for_service("/mavros/set_mode")
+        self.set_mode_client = rospy.ServiceProxy("mavros/set_mode", SetMode)
+
         # Your code goes below
         setpoint_topic = "/mavros/setpoint_position/local"
         self.setpoint_pub_ = rospy.Publisher(setpoint_topic, PoseStamped, queue_size=10)
         self.local_pose_sub = rospy.Subscriber("mavros/local_position/pose", PoseStamped, callback = self.callback_pose)
+        self.state_sub = rospy.Subscriber("mavros/state", State, callback = self.state_cb)
         self.class_name_ = "CommNode::"
         self.max_vel = 0.2 #m/s
         self.goal_height = 0.5 #m
@@ -41,6 +45,12 @@ class CommNode:
         self.active = False
 
     # TODO - setup vicon subscriber here and callback functions below
+
+    def state_cb(msg):
+        self.current_state = msg
+        if self.current_state.connected == True:
+            self.active = True
+
     def is_close(self, pose1, pose2):
         p1 = pose1.position
         p2 = pose2.position
@@ -284,6 +294,14 @@ class CommNode:
             rate.sleep()
         print(f"Connected!")
         self.active = True
+
+        offb_set_mode = SetModeRequest()
+        offb_set_mode.custom_mode = 'OFFBOARD'
+
+        while(not rospy.is_shutdown() and self.current_state.mode != "OFFBOARD"):
+            if(self.set_mode_client.call(offb_set_mode).mode_sent == True):
+                rospy.loginfo("OFFBOARD enabled")
+            rate.sleep()
 
         while(not rospy.is_shutdown()):
             if self.curr_waypoint is None or self.is_close(self.curr_waypoint, self.curr_pose) or self.is_close(self.goal_pose, self.curr_pose): #last check should be redundant but better safe than sorry
