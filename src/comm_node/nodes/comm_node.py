@@ -3,6 +3,7 @@ import rospy
 from std_srvs.srv import Empty, EmptyResponse
 from geometry_msgs.msg import Pose, PoseStamped
 from tf.transformations import quaternion_from_euler
+from mavros_msgs.msg import State
 import numpy as np
 
 class CommNode:
@@ -28,12 +29,16 @@ class CommNode:
         self.goal_height = 0.5 #m
         self.goal_pose = None
         self.ground_height = 0.2 #m
+        self.launch = False
 
         self.sub_dist = 0.1 #dist between each waypoint?
         self.dist_tolerance = 0.1 #tolerance before moving to next waypoint
         self.waypoints = []
-        self.curr_waypoint = Pose()
+        self.curr_waypoint = None
         self.curr_pose = None
+
+        self.current_state = State()
+        self.active = False
 
     # TODO - setup vicon subscriber here and callback functions below
     def is_close(self, pose1, pose2):
@@ -72,49 +77,73 @@ class CommNode:
 
         print("finished. \nWAYPOINTS:")
         print(self.waypoints)
+    
+    def waypoint_pop(self):
+        next_waypoint = self.waypoints[0]
+        self.waypoints = self.waypoints[1:]
+        return next_waypoint
 
   # Callback handlers
     def handle_launch(self):
         print('Launch Requested. Your drone should take off.')
+        if not self.active:
+            print("Cannot launch, not connected yet")
+            return EmptyResponse()
         # for w_point in waypoint:
         #     w_pose = w_point.position
         #     print(self.class_name_ + function_name + " sending to ", w_pose.x, w_pose.y, w_pose.z)
         #     self.set_position(w_pose)
         function_name = "handle_launch:"
         # Two tier'd takeoff - takeoff to 0.5m first, delay, then takeoff to full 14m
+        # only add waypoints. Main loop will do the pose publishing
         print(self.class_name_)
+
         takeoff_target = Pose()
         takeoff_target.position.x = 0.0
         takeoff_target.position.y = 0.0
         takeoff_target.position.z = self.goal_height/2
+        takeoff_target.orientation.x = 0
+        takeoff_target.orientation.y = 0
+        takeoff_target.orientation.z = 0
+        takeoff_target.orientation.w = 1
+        self.waypoints.append(takeoff_target)
+        print("first goal: ", takeoff_target)
+
+        self.goal_pose = Pose()
+        self.goal_pose.position.x = 0.0
+        self.goal_pose.position.y = 0.0
+        self.goal_pose.position.z = self.goal_height
         
-        takeoff_target.orientation.x = 0
-        takeoff_target.orientation.y = 0
-        takeoff_target.orientation.z = 0
-        takeoff_target.orientation.w = 1
-        print(takeoff_target)
-        self.set_position(takeoff_target)
-        while (not self.is_close(self.curr_pose, takeoff_target)):
-            print(self.class_name_ + function_name + "waiting for initial takeoff. Currently at:")
-            print(self.curr_pose.position)
+        self.goal_pose.orientation.x = 0
+        self.goal_pose.orientation.y = 0
+        self.goal_pose.orientation.z = 0
+        self.goal_pose.orientation.w = 1
+        print("goal: ", self.goal_pose)
+        
+        self.waypoints.append(self.goal_pose)
+        
+        # self.set_position(takeoff_target)
+        # while (not self.is_close(self.curr_pose, takeoff_target)):
+        #     print(self.class_name_ + function_name + "waiting for initial takeoff. Currently at:")
+        #     print(self.curr_pose.position)
 
-        print(self.class_name_ + function_name + "waiting for 5s...")
+        # print(self.class_name_ + function_name + "waiting for 5s...")
 
-        rospy.sleep(5.)
-        print(self.class_name_ + function_name + "waiting for 0.5m")
-        takeoff_target = Pose()
-        takeoff_target.position.x = 0.0
-        takeoff_target.position.y = 0.0
-        takeoff_target.position.z = self.goal_height
-        takeoff_target.orientation.x = 0
-        takeoff_target.orientation.y = 0
-        takeoff_target.orientation.z = 0
-        takeoff_target.orientation.w = 1
-        self.set_position(takeoff_target)
-        while (not self.is_close(self.curr_pose, takeoff_target)):
-            print(self.class_name_ + function_name + "waiting for final takeoff. Currently at:")
-            print(self.curr_pose.position)
-        print(self.class_name_ + function_name + "takeoff complete")
+        # rospy.sleep(5.)
+        # print(self.class_name_ + function_name + "waiting for 0.5m")
+        # takeoff_target = Pose()
+        # takeoff_target.position.x = 0.0
+        # takeoff_target.position.y = 0.0
+        # takeoff_target.position.z = self.goal_height
+        # takeoff_target.orientation.x = 0
+        # takeoff_target.orientation.y = 0
+        # takeoff_target.orientation.z = 0
+        # takeoff_target.orientation.w = 1
+        # self.set_position(takeoff_target)
+        # while (not self.is_close(self.curr_pose, takeoff_target)):
+        #     print(self.class_name_ + function_name + "waiting for final takeoff. Currently at:")
+        #     print(self.curr_pose.position)
+        # print(self.class_name_ + function_name + "takeoff complete")
 
     def handle_test(self):
         print('Test Requested. Your drone should perform the required tasks. Recording starts now.')
@@ -129,6 +158,10 @@ class CommNode:
         #     return 0
 
         # check if on ground, check connection to realsense and can see odom messages
+        if not self.active:
+            print("Cannot test, not connected yet")
+            return EmptyResponse()
+            
         if self.curr_pose != None:
             print('can recieve odom measurements')
             if self.curr_pose.position.z < self.ground_height:
@@ -148,33 +181,65 @@ class CommNode:
     def handle_land(self):
         print('Land Requested. Your drone should land.')
         function_name = "handle_land:"
-        # Two tier'd takeoff - takeoff to 0.5m first, delay, then takeoff to full 14m
+        if not self.active:
+            print("Cannot launch, not connected yet")
+            return EmptyResponse()
         print(self.class_name_)
+
+        # clear waypoints and land immediately
+        # only add waypoints. Main loop will do the pose publishing
+        self.waypoints = []
+
         takeoff_target = Pose()
         takeoff_target.position.x = 0.0
         takeoff_target.position.y = 0.0
         takeoff_target.position.z = self.goal_height/4
-        takeoff_target.orientation = quaternion_from_euler(0.0, 0.0, 0.0) 
+        takeoff_target.orientation.x = 0
+        takeoff_target.orientation.y = 0
+        takeoff_target.orientation.z = 0
+        takeoff_target.orientation.w = 1
+        self.waypoints.append(takeoff_target)
+        print("first goal: ", takeoff_target)
 
-        self.set_position(takeoff_target)
-        print(self.class_name_ + function_name + "waiting for 5s...")
+        self.goal_pose = Pose()
+        self.goal_pose.position.x = 0.0
+        self.goal_pose.position.y = 0.0
+        self.goal_pose.position.z = self.ground_height
+        self.goal_pose.orientation.x = 0
+        self.goal_pose.orientation.y = 0
+        self.goal_pose.orientation.z = 0
+        self.goal_pose.orientation.w = 1
+        print("goal: ", self.goal_pose)
+        self.waypoints.append(self.goal_pose)
 
-        rospy.sleep(5.)
-        print(self.class_name_ + function_name + "waiting for hover above ground")
-        takeoff_target = Pose()
-        takeoff_target.position.x = 0.0
-        takeoff_target.position.y = 0.0
-        takeoff_target.position.z = self.ground_height
-        takeoff_target.orientation = quaternion_from_euler(0.0, 0.0, 0.0) 
-        self.set_position(takeoff_target)
-        print(self.class_name_ + function_name + "hover complete")
-        rospy.sleep(5.)
-        exit()
+        # Two tier'd takeoff - takeoff to 0.5m first, delay, then takeoff to full 14m
+        # print(self.class_name_)
+        # takeoff_target = Pose()
+        # takeoff_target.position.x = 0.0
+        # takeoff_target.position.y = 0.0
+        # takeoff_target.position.z = self.goal_height/4
+        # takeoff_target.orientation = quaternion_from_euler(0.0, 0.0, 0.0) 
+
+        # self.set_position(takeoff_target)
+        # print(self.class_name_ + function_name + "waiting for 5s...")
+
+        # rospy.sleep(5.)
+        # print(self.class_name_ + function_name + "waiting for hover above ground")
+        # takeoff_target = Pose()
+        # takeoff_target.position.x = 0.0
+        # takeoff_target.position.y = 0.0
+        # takeoff_target.position.z = self.ground_height
+        # takeoff_target.orientation = quaternion_from_euler(0.0, 0.0, 0.0) 
+        # self.set_position(takeoff_target)
+        # print(self.class_name_ + function_name + "hover complete")
+        # rospy.sleep(5.)
+        # exit()
 
 
     def handle_abort(self):
         print('Abort Requested. Your drone should land immediately due to safety considerations')
         exit()
+        return EmptyResponse()
 
     # Service callbacks
     def callback_launch(self,request):
@@ -195,7 +260,7 @@ class CommNode:
     
     def callback_pose(self, pose):
         self.curr_pose = pose.pose
-        return 0
+        return EmptyResponse()
 
     # Our functions:
     '''
@@ -210,7 +275,29 @@ class CommNode:
         # TODO - add frame
         # msg.header.frame_id = "base_link"
         self.setpoint_pub_.publish(msg)
+
+    def run(self):
+        rate = rospy.Rate(20)
+
+        print(f"Connecting...")
+        while((not rospy.is_shutdown() and not self.current_state.connected) or (self.curr_pose is None)):
+            rate.sleep()
+        print(f"Connected!")
+        self.active = True
+
+        while(not rospy.is_shutdown()):
+            if self.curr_waypoint is None or self.is_close(self.curr_waypoint, self.curr_pose) or self.is_close(self.goal_pose, self.curr_pose): #last check should be redundant but better safe than sorry
+                if len(self.waypoints) > 0:
+                    print("current waypoint reached at : ", self.curr_waypoint.position.x, self.curr_waypoint.position.y, self.curr_waypoint.position.z)
+                    self.current_waypoint = self.waypoint_pop()
+                    print("new waypoint : ", self.curr_waypoint.position.x, self.curr_waypoint.position.y, self.curr_waypoint.position.z)
+                    
+            self.set_position(self.current_waypoint)
+            print("curr pose: ", self.curr_pose.position.x, self.curr_pose.position.y, self.curr_pose.position.z)
+            rate.sleep()
+
         
 if __name__ == "__main__":
     comm_node = CommNode()
+    comm_node.run()
     rospy.spin()
