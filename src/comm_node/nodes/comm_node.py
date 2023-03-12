@@ -4,6 +4,7 @@ from std_srvs.srv import Empty, EmptyResponse
 from geometry_msgs.msg import Pose, PoseStamped
 from tf.transformations import quaternion_from_euler
 from mavros_msgs.msg import State
+from mavros_msgs.srv import SetMode, SetModeRequest
 import numpy as np
 
 class CommNode:
@@ -45,8 +46,44 @@ class CommNode:
         self.active = False
 
     # TODO - setup vicon subscriber here and callback functions below
+    def is_close(self, pose1, pose2):
+        p1 = pose1.position
+        p2 = pose2.position
+        dist = np.linalg.norm((np.array([p1.x, p1.y, p1.z]) - np.array([p2.x, p2.y, p2.z])))
+        return dist < self.dist_tolerance
 
-    def state_cb(msg):
+    def create_waypoints(self):
+        print('generating waypoints...')
+        gen_points = True
+
+        # right now, curr_pose should just be on the ground the only change from initial pose to goal is z
+        self.goal_pose = Pose()
+        cp = self.curr_pose.position # so it doesnt change half way lol
+        self.goal_pose.position.x = cp.x
+        self.goal_pose.position.y = cp.y
+        self.goal_pose.position.z = self.goal_height
+
+        while gen_points:
+            if self.waypoints[-1].position.z == self.goal_height:
+                gen_points = False
+                break
+            if self.is_close(self.goal_pose, self.waypoints[-1]):
+                self.waypoints.append(goal_pose_stamp)
+                gen_points = False
+                break
+
+            point = Pose()
+            point.header.frame_id = head
+            point.position.x = cp.x
+            point.position.y = cp.y
+            point.position.z = cp.z + self.sub_dist
+
+            self.waypoints.append(point)
+
+        print("finished. \nWAYPOINTS:")
+        print(self.waypoints)
+
+    def state_cb(self, msg):
         self.current_state = msg
         if self.current_state.connected == True:
             self.active = True
@@ -289,10 +326,10 @@ class CommNode:
     def run(self):
         rate = rospy.Rate(20)
 
-        print(f"Connecting...")
+        print("Connecting...")
         while((not rospy.is_shutdown() and not self.current_state.connected) or (self.curr_pose is None)):
             rate.sleep()
-        print(f"Connected!")
+        print("Connected!")
         self.active = True
 
         offb_set_mode = SetModeRequest()

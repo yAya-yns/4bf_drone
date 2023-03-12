@@ -1,1 +1,6 @@
 *.DS_Store
+install/
+devel/
+build/
+logs/
+.catkin_tools
