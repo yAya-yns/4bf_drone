@@ -1,6 +1,11 @@
 *.DS_Store
+<<<<<<< Updated upstream
 install/
 devel/
 build/
 logs/
 .catkin_tools
+=======
+PX4-Autopilot/
+jMAVSim/
+>>>>>>> Stashed changes
