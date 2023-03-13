@@ -23,6 +23,8 @@ ROB521
 cd 4bf_drone/PX4-Autopilot/
 make px4_sitl_default gazebo
 ```
+Notes: Since the `PX4-Autopilot` package is large for jetson, it is not pushed to this repo. Please download it [here](https://github.com/PX4/PX4-Autopilot)
+
 
 ### Terminal 2:
 ```

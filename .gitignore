@@ -5,4 +5,3 @@ build/
 logs/
 .catkin_tools
 PX4-Autopilot/
-PX4-Autopilot_backup/
