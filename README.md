@@ -18,6 +18,9 @@ ROB521
 ## Run the simulation: 
 3 terminal needed in total:
 
+### To launch the drone:
+roslaunch bringup bringup.launch
+
 ### Terminal 1:
 ```
 cd 4bf_drone/PX4-Autopilot/
