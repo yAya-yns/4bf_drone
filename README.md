@@ -1,6 +1,12 @@
 # error_code_-11
 ROB521
 
+# To launch the drone:
+```
+roslaunch bringup bringup.launch
+```
+
+
 # Simuluation
 
 ## Setup: 
@@ -17,9 +23,6 @@ ROB521
 
 ## Run the simulation: 
 3 terminal needed in total:
-
-### To launch the drone:
-roslaunch bringup bringup.launch
 
 ### Terminal 1:
 ```
