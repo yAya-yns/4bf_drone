@@ -4,7 +4,7 @@ from std_srvs.srv import Empty, EmptyResponse
 from geometry_msgs.msg import Pose, PoseStamped
 from tf.transformations import quaternion_from_euler
 from mavros_msgs.msg import State
-from mavros_msgs.srv import SetMode, SetModeRequest
+from mavros_msgs.srv import CommandBool, CommandBoolRequest, SetMode, SetModeRequest
 import numpy as np
 
 class CommNode:
@@ -24,6 +24,9 @@ class CommNode:
         rospy.wait_for_service("/mavros/set_mode")
         self.set_mode_client = rospy.ServiceProxy("mavros/set_mode", SetMode)
 
+        rospy.wait_for_service("/mavros/cmd/arming")
+        self.arming_client = rospy.ServiceProxy("mavros/cmd/arming", CommandBool)  
+
         # Your code goes below
         setpoint_topic = "/mavros/setpoint_position/local"
         self.setpoint_pub_ = rospy.Publisher(setpoint_topic, PoseStamped, queue_size=10)
@@ -31,9 +34,9 @@ class CommNode:
         self.state_sub = rospy.Subscriber("mavros/state", State, callback = self.state_cb)
         self.class_name_ = "CommNode::"
         self.max_vel = 0.2 #m/s
-        self.goal_height = 0.5 #m
+        self.goal_height = 0.25 #m
         self.goal_pose = None
-        self.ground_height = 0.2 #m
+        self.ground_height = 0.1 #m
         self.launch = False
 
         self.sub_dist = 0.1 #dist between each waypoint?
@@ -320,7 +323,7 @@ class CommNode:
         msg.pose = pose
         msg.header.stamp = rospy.Time.now()
         # TODO - add frame
-        # msg.header.frame_id = "base_link"
+        msg.header.frame_id = 'map'
         self.setpoint_pub_.publish(msg)
 
     def run(self):
@@ -335,20 +338,48 @@ class CommNode:
         offb_set_mode = SetModeRequest()
         offb_set_mode.custom_mode = 'OFFBOARD'
 
-        while(not rospy.is_shutdown() and self.current_state.mode != "OFFBOARD"):
-            if(self.set_mode_client.call(offb_set_mode).mode_sent == True):
+        arm_cmd = CommandBoolRequest()
+        arm_cmd.value = True
+
+        takeoff_target = Pose()
+        takeoff_target.position.x = 0.0
+        takeoff_target.position.y = 0.0
+        takeoff_target.position.z = 0.0       
+        takeoff_target.orientation.x = 0
+        takeoff_target.orientation.y = 0
+        takeoff_target.orientation.z = 0
+        takeoff_target.orientation.w = 1
+
+        while(not rospy.is_shutdown() and self.current_state.mode != "OFFBOARD" and not self.current_state.armed):
+            armed = self.arming_client.call(arm_cmd)
+            offboard = self.set_mode_client.call(offb_set_mode)
+
+            if(offboard.mode_sent == True):
                 rospy.loginfo("OFFBOARD enabled")
+            elif(armed.success == True):
+                rospy.loginfo("Vehicle armed")
+                
+            self.set_position(takeoff_target)
             rate.sleep()
 
+        self.waypoints.append(takeoff_target)
+
+        while (self.curr_pose is None):
+            rospy.loginfo("waiting for valid current pose")
+            self.set_position(takeoff_target)
+            rate.sleep()
+
+        print(self.curr_pose)
         while(not rospy.is_shutdown()):
             if self.curr_waypoint is None or self.is_close(self.curr_waypoint, self.curr_pose) or self.is_close(self.goal_pose, self.curr_pose): #last check should be redundant but better safe than sorry
                 if len(self.waypoints) > 0:
-                    print("current waypoint reached at : ", self.curr_waypoint.position.x, self.curr_waypoint.position.y, self.curr_waypoint.position.z)
-                    self.current_waypoint = self.waypoint_pop()
+                    # print("current waypoint reached at : ", self.curr_waypoint.position.x, self.curr_waypoint.position.y, self.curr_waypoint.position.z)
+                    self.curr_waypoint = self.waypoint_pop()
                     print("new waypoint : ", self.curr_waypoint.position.x, self.curr_waypoint.position.y, self.curr_waypoint.position.z)
                     
-            self.set_position(self.current_waypoint)
+            self.set_position(self.curr_waypoint)
             print("curr pose: ", self.curr_pose.position.x, self.curr_pose.position.y, self.curr_pose.position.z)
+            print("target pose: ", self.curr_waypoint.position.x, self.curr_waypoint.position.y, self.curr_waypoint.position.z)
             rate.sleep()
 
         
