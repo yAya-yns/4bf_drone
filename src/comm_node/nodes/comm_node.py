@@ -34,8 +34,13 @@ class CommNode:
         self.state_sub = rospy.Subscriber("mavros/state", State, callback = self.state_cb)
         self.class_name_ = "CommNode::"
         self.max_vel = 0.2 #m/s
-        self.goal_height = 0.25 #m
-        self.goal_pose = None
+        self.goal_height = 1.6 #m
+
+        self.goal_pose = Pose()
+        self.goal_pose.position.x = 0
+        self.goal_pose.position.y = 0
+        self.goal_pose.position.z = self.goal_height
+
         self.ground_height = 0.1 #m
         self.launch = False
 
@@ -148,17 +153,6 @@ class CommNode:
         # only add waypoints. Main loop will do the pose publishing
         print(self.class_name_)
 
-        takeoff_target = Pose()
-        takeoff_target.position.x = 0.0
-        takeoff_target.position.y = 0.0
-        takeoff_target.position.z = self.goal_height/2
-        takeoff_target.orientation.x = 0
-        takeoff_target.orientation.y = 0
-        takeoff_target.orientation.z = 0
-        takeoff_target.orientation.w = 1
-        self.waypoints.append(takeoff_target)
-        print("first goal: ", takeoff_target)
-
         self.goal_pose = Pose()
         self.goal_pose.position.x = 0.0
         self.goal_pose.position.y = 0.0
@@ -171,7 +165,7 @@ class CommNode:
         print("goal: ", self.goal_pose)
         
         self.waypoints.append(self.goal_pose)
-        
+        self.curr_waypoint = self.waypoint_pop()
         # self.set_position(takeoff_target)
         # while (not self.is_close(self.curr_pose, takeoff_target)):
         #     print(self.class_name_ + function_name + "waiting for initial takeoff. Currently at:")
@@ -254,14 +248,14 @@ class CommNode:
         self.goal_pose = Pose()
         self.goal_pose.position.x = 0.0
         self.goal_pose.position.y = 0.0
-        self.goal_pose.position.z = self.ground_height
         self.goal_pose.orientation.x = 0
         self.goal_pose.orientation.y = 0
         self.goal_pose.orientation.z = 0
         self.goal_pose.orientation.w = 1
         print("goal: ", self.goal_pose)
         self.waypoints.append(self.goal_pose)
-
+        
+        self.curr_waypoint = self.waypoint_pop() 
         # Two tier'd takeoff - takeoff to 0.5m first, delay, then takeoff to full 14m
         # print(self.class_name_)
         # takeoff_target = Pose()
@@ -370,6 +364,7 @@ class CommNode:
             rate.sleep()
 
         print(self.curr_pose)
+        self.curr_waypoint = self.waypoint_pop()
         while(not rospy.is_shutdown()):
             if self.curr_waypoint is None or self.is_close(self.curr_waypoint, self.curr_pose) or self.is_close(self.goal_pose, self.curr_pose): #last check should be redundant but better safe than sorry
                 if len(self.waypoints) > 0:
@@ -387,3 +382,6 @@ if __name__ == "__main__":
     comm_node = CommNode()
     comm_node.run()
     rospy.spin()
+    # rosservice call rob498_drone_13/comm/launch
+    # rosservice call rob498_drone_13/comm/land
+
