@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 import rospy
 from std_srvs.srv import Empty, EmptyResponse
-from geometry_msgs.msg import Pose, PoseStamped
-from tf.transformations import quaternion_from_euler
+from geometry_msgs.msg import Pose, PoseStamped, TransformStamped
+from tf import TransformBroadcaster, TransformListener
 from mavros_msgs.msg import State
 from mavros_msgs.srv import CommandBool, CommandBoolRequest, SetMode, SetModeRequest
 import numpy as np
@@ -28,15 +28,26 @@ class CommNode:
         self.arming_client = rospy.ServiceProxy("mavros/cmd/arming", CommandBool)  
 
         # Your code goes below
-        setpoint_topic = "/mavros/setpoint_position/local"
-        self.setpoint_pub_ = rospy.Publisher(setpoint_topic, PoseStamped, queue_size=10)
-        self.local_pose_sub = rospy.Subscriber("mavros/local_position/pose", PoseStamped, callback = self.callback_pose)
-        self.state_sub = rospy.Subscriber("mavros/state", State, callback = self.state_cb)
+
+        # Pubs, Subs and Transforms
+        self.setpoint_pub_ = rospy.Publisher("/mavros/setpoint_position/local", PoseStamped, queue_size=10)
+        self.local_pose_sub = rospy.Subscriber("/mavros/local_position/pose", PoseStamped, callback = self.pose_cb)
+        self.vicon_sub = rospy.Subscriber("/vicon/ROB498_Drone/ROB498_Drone", TransformStamped, callback = self.vicon_cb)
+        self.state_sub = rospy.Subscriber("/mavros/state", State, callback = self.state_cb)
+
+        # Transforms
+        self.transform_broadcaster = TransformBroadcaster()
+        self.transform_listener = TransformListener()
+        self.vicon_frame = "vicon"
+        self.baselink_frame = "baselink"
+        self.odom_frame = "odom"
+
         self.class_name_ = "CommNode::"
         self.max_vel = 0.2 #m/s
         self.goal_height = 1.6 #m
 
-        self.goal_pose = Pose()
+        self.goal_pose = PoseStamped()
+        self.goal_pose.header.stamped = self.vicon_frame
         self.goal_pose.position.x = 0
         self.goal_pose.position.y = 0
         self.goal_pose.position.z = self.goal_height
@@ -91,6 +102,14 @@ class CommNode:
         print("finished. \nWAYPOINTS:")
         print(self.waypoints)
 
+    def vicon_cb(self, msg):
+        # Creates TF connection from child_frame (self.vicon_frame?) to header_frame (self.baselink_frame?)
+        self.transform_broadcaster(msg.transform.translation, 
+                                   msg.transform.rotation, 
+                                   rospy.Time.now(),
+                                   msg.child_frame_id,
+                                   msg.header.frame_id)
+
     def state_cb(self, msg):
         self.current_state = msg
         if self.current_state.connected == True:
@@ -107,26 +126,27 @@ class CommNode:
         gen_points = True
 
         # right now, curr_pose should just be on the ground the only change from initial pose to goal is z
-        self.goal_pose = Pose()
-        cp = self.curr_pose.position # so it doesnt change half way lol
-        self.goal_pose.position.x = cp.x
-        self.goal_pose.position.y = cp.y
-        self.goal_pose.position.z = self.goal_height
+        self.goal_pose = PoseStamped()
+        point.header.frame_id = self.vicon_frame
+        cp = self.curr_pose.pose.position # so it doesnt change half way lol
+        self.goal_pose.pose.position.x = cp.x
+        self.goal_pose.pose.position.y = cp.y
+        self.goal_pose.pose.position.z = self.goal_height
 
         while gen_points:
             if self.waypoints[-1].position.z == self.goal_height:
                 gen_points = False
                 break
             if self.is_close(self.goal_pose, self.waypoints[-1]):
-                self.waypoints.append(goal_pose_stamp)
+                self.waypoints.append(self.goal_pose)
                 gen_points = False
                 break
 
-            point = Pose()
-            point.header.frame_id = head
-            point.position.x = cp.x
-            point.position.y = cp.y
-            point.position.z = cp.z + self.sub_dist
+            point = PoseStamped()
+            point.header.frame_id = self.vicon_frame
+            point.pose.position.x = cp.x
+            point.pose.position.y = cp.y
+            point.pose.position.z = cp.z + self.sub_dist
 
             self.waypoints.append(point)
 
@@ -302,7 +322,7 @@ class CommNode:
         self.handle_abort()
         return EmptyResponse()
     
-    def callback_pose(self, pose):
+    def pose_cb(self, pose):
         self.curr_pose = pose.pose
         return EmptyResponse()
 
@@ -312,12 +332,9 @@ class CommNode:
     *
     *  @param[in] geometry_msgs pose in FLU frame, [m/rad]
     '''
-    def set_position(self, pose):
-        msg = PoseStamped()
-        msg.pose = pose
-        msg.header.stamp = rospy.Time.now()
-        # TODO - add frame
-        msg.header.frame_id = 'map'
+    def set_position(self, poseStamped):
+        # Transform incoming from vicon to baselink at the latest time
+        msg = self.transform_listener.transformPose(self.odom_frame, poseStamped)
         self.setpoint_pub_.publish(msg)
 
     def run(self):
@@ -335,14 +352,15 @@ class CommNode:
         arm_cmd = CommandBoolRequest()
         arm_cmd.value = True
 
-        takeoff_target = Pose()
-        takeoff_target.position.x = 0.0
-        takeoff_target.position.y = 0.0
-        takeoff_target.position.z = 0.0       
-        takeoff_target.orientation.x = 0
-        takeoff_target.orientation.y = 0
-        takeoff_target.orientation.z = 0
-        takeoff_target.orientation.w = 1
+        takeoff_target = PoseStamped()
+        takeoff_target.header.frame_id = self.vicon_frame
+        takeoff_target.pose.position.x = 0.0
+        takeoff_target.pose.position.y = 0.0
+        takeoff_target.pose.position.z = 0.0       
+        takeoff_target.pose.orientation.x = 0
+        takeoff_target.pose.orientation.y = 0
+        takeoff_target.pose.orientation.z = 0
+        takeoff_target.pose.orientation.w = 1
 
         while(not rospy.is_shutdown() and self.current_state.mode != "OFFBOARD" and not self.current_state.armed):
             armed = self.arming_client.call(arm_cmd)
