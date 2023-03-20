@@ -30,7 +30,7 @@ class CommNode:
 
         # Pubs, Subs and Transforms
         self.setpoint_pub_ = rospy.Publisher("/mavros/setpoint_position/local", PoseStamped, queue_size=10)
-        self.local_pose_sub = rospy.Subscriber("/mavros/local_position/pose", PoseStamped, callback = self.pose_cb)
+        self.local_pose_sub = rospy.Subscriber("/mavros/local_position/pose", PoseStamped, callback = self.pose_cb) # in map frame
         self.vicon_sub = rospy.Subscriber("/vicon/ROB498_Drone/ROB498_Drone", TransformStamped, callback = self.vicon_cb)
         self.state_sub = rospy.Subscriber("/mavros/state", State, callback = self.state_cb)
         self.sub_waypoints = rospy.Subscriber(node_name+'/comm/waypoints', PoseArray, self.callback_waypoints)
@@ -38,19 +38,19 @@ class CommNode:
         # Transforms
         self.transform_broadcaster = TransformBroadcaster()
         self.transform_listener = TransformListener()
-        self.vicon_frame = "vicon"
-        self.baselink_frame = "baselink"
-        self.odom_frame = "odom"
+        self.vicon_frame = "base_link" # TODO change this back "vicon"
+        self.baselink_frame = "base_link"
+        self.odom_frame = "odom" 
 
         self.class_name_ = "CommNode::"
         self.max_vel = 0.2 #m/s
         self.goal_height = 1.6 #m
 
         self.goal_pose = PoseStamped()
-        self.goal_pose.header.stamped = self.vicon_frame
-        self.goal_pose.position.x = 0
-        self.goal_pose.position.y = 0
-        self.goal_pose.position.z = self.goal_height
+        self.goal_pose.header.frame_id = self.vicon_frame
+        self.goal_pose.pose.position.x = 0
+        self.goal_pose.pose.position.y = 0
+        self.goal_pose.pose.position.z = self.goal_height
 
         self.ground_height = 0.1 #m
         self.launch = False
@@ -253,7 +253,7 @@ class CommNode:
         self.waypoints.append(takeoff_target)
         print("first goal: ", takeoff_target)
 
-        self.goal_pose = Pose()
+        self.goal_pose = PoseStamped()
         self.goal_pose.header.frame_id = self.vicon_frame
         self.goal_pose.pose.position.x = 0.0
         self.goal_pose.pose.position.y = 0.0
@@ -301,7 +301,9 @@ class CommNode:
     '''
     def set_position(self, poseStamped):
         # Transform incoming from vicon to baselink at the latest time
-        msg = self.transform_listener.transformPose(self.odom_frame, poseStamped)
+        # msg = self.transform_listener.transformPose(self.odom_frame, poseStamped)
+
+        poseStamped.header.stamp = rospy.Time.now()
         self.setpoint_pub_.publish(msg)
 
     def run(self):

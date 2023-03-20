@@ -12,6 +12,9 @@
   <!-- Launch comm_node -->
   <node name="comm_node" pkg="comm_node" type="comm_node.py" output="screen" ></node>
 
+  <!-- Launch tf publisher from odom to camera baselink-->
+  <node name="tf_odom_baselink_pub" pkg="comm_node" type="tf_odom_baselink_pub.py" output="screen" ></node>
+
   <!-- Launch MavROS -->
   <group ns="$(arg ns)">
       <include file="$(find mavros)/launch/node.launch">

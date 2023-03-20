@@ -24,5 +24,6 @@ catkin_package(
 ################################################################################
 catkin_install_python(PROGRAMS
   nodes/comm_node.py
+  nodes/tf_odom_baselink_pub.py
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
