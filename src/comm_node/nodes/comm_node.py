@@ -1,13 +1,25 @@
 #!/usr/bin/env python
 import rospy
 from std_srvs.srv import Empty, EmptyResponse
-from geometry_msgs.msg import Pose, PoseStamped, PoseArray, Twist
+from geometry_msgs.msg import Pose, PoseStamped, PoseArray
 from mavros_msgs.msg import State
 from mavros_msgs.srv import CommandBool, CommandBoolRequest, SetMode, SetModeRequest
 import numpy as np
 
+def get_pose(x, y, z):
+    ret = Pose()
+    ret.position.x = x
+    ret.position.y = y
+    ret.position.z = z
+    ret.orientation.x = 0
+    ret.orientation.y = 0
+    ret.orientation.z = 0
+    ret.orientation.w = 1
+    return ret
+
+
 class CommNode:
-    def __init__(self, position_command = True):
+    def __init__(self):
         print('This is a dummy drone node to test communication with the ground control')
         print('node_name should be rob498_drone_TeamID. Service topics should follow the name convention below')
         print('The TAs will test these service calls prior to flight')
@@ -15,10 +27,10 @@ class CommNode:
         
         node_name = 'rob498_drone_13'
         rospy.init_node(node_name) 
-        self.srv_launch = rospy.Service(node_name + '/comm/launch', Empty, self.callback_launch)
-        self.srv_test = rospy.Service(node_name + '/comm/test', Empty, self.callback_test)
-        self.srv_land = rospy.Service(node_name + '/comm/land', Empty, self.callback_land)
-        self.srv_abort = rospy.Service(node_name + '/comm/abort', Empty, self.callback_abort)
+        self.srv_launch = rospy.Service(node_name + '/comm/launch', Empty, lambda r: self.handle_launch())
+        self.srv_test = rospy.Service(node_name + '/comm/test', Empty, lambda r: self.handle_test())
+        self.srv_land = rospy.Service(node_name + '/comm/land', Empty, lambda r: self.handle_land())
+        self.srv_abort = rospy.Service(node_name + '/comm/abort', Empty, lambda r: self.handle_abort())
 
         rospy.wait_for_service("/mavros/set_mode")
         self.set_mode_client = rospy.ServiceProxy("mavros/set_mode", SetMode)
@@ -27,13 +39,10 @@ class CommNode:
         self.arming_client = rospy.ServiceProxy("mavros/cmd/arming", CommandBool)  
 
         # Pubs, Subs and Transforms
-        self.position_command = position_command
-        if position_command:
-            self.setpoint_pub_ = rospy.Publisher("/mavros/setpoint_position/local", PoseStamped, queue_size=10)
-        else:
-            self.setpoint_vel_pub_ = rospy.Publisher("setpoint_velocity/cmd_vel_unstamped", Twist, queue_size=10)
-        self.local_pose_sub = rospy.Subscriber("mavros/local_position/pose", PoseStamped, callback = self.callback_pose)
-        self.state_sub = rospy.Subscriber("mavros/state", State, callback = self.state_cb)
+        self.setpoint_pub_ = rospy.Publisher("/mavros/setpoint_position/local", PoseStamped, queue_size=10)
+        self.local_pose_sub = rospy.Subscriber("/mavros/local_position/pose", PoseStamped, callback = self.callback_pose)
+        
+        self.state_sub = rospy.Subscriber("/mavros/state", State, callback = self.state_cb)
         # self.sub_waypoints = rospy.Subscriber(node_name+'/comm/waypoints', PoseArray, self.callback_waypoints) TODO: add back this after velocity command testing
 
         # # Transforms TODO: add back after velocity testing
@@ -46,10 +55,7 @@ class CommNode:
         self.max_vel = 0.2 #m/s
         self.goal_height = 1.6 #m
 
-        self.goal_pose = Pose()
-        self.goal_pose.position.x = 0
-        self.goal_pose.position.y = 0
-        self.goal_pose.position.z = self.goal_height
+        self.goal_pose = get_pose(0, 0, self.goal_height)
 
         self.ground_height = 0.1 #m
         self.launch = False
@@ -65,6 +71,11 @@ class CommNode:
         self.current_state = State()
         self.active = False
 
+    def state_cb(self, msg):
+        self.current_state = msg
+        if self.current_state.connected == True:
+            self.active = True
+
     # TODO - setup vicon subscriber here and callback functions below
     def is_close(self, pose1, pose2):
         p1 = pose1.position
@@ -73,6 +84,7 @@ class CommNode:
         return dist < self.dist_tolerance
 
     def create_waypoints(self):
+        '''TODO: for challenge 3'''
         print('generating waypoints...')
         gen_points = True
 
@@ -111,18 +123,6 @@ class CommNode:
     #     for pose in msg.poses:
     #         pos = np.array([pose.position.x, pose.position.y, pose.position.z])
     #         self.waypoints_arr = np.vstack((self.waypoints_arr, pos))
-
-    def state_cb(self, msg):
-        self.current_state = msg
-        if self.current_state.connected == True:
-            self.active = True
-
-    def is_close(self, pose1, pose2):
-        p1 = pose1.position
-        p2 = pose2.position
-        dist = np.linalg.norm((np.array([p1.x, p1.y, p1.z]) - np.array([p2.x, p2.y, p2.z])))
-        return dist < self.dist_tolerance
-
     
     def waypoint_pop(self):
         next_waypoint = self.waypoints[0]
@@ -140,15 +140,7 @@ class CommNode:
         # only add waypoints. Main loop will do the pose publishing
         print(self.class_name_)
 
-        self.goal_pose = Pose()
-        self.goal_pose.position.x = 0.0
-        self.goal_pose.position.y = 0.0
-        self.goal_pose.position.z = self.goal_height
-        
-        self.goal_pose.orientation.x = 0
-        self.goal_pose.orientation.y = 0
-        self.goal_pose.orientation.z = 0
-        self.goal_pose.orientation.w = 1
+        self.goal_pose = get_pose(0.0, 0.0, self.goal_height)
         print("goal: ", self.goal_pose)
         
         self.waypoints.append(self.goal_pose)
@@ -204,50 +196,20 @@ class CommNode:
         # only add waypoints. Main loop will do the pose publishing
         self.waypoints = []
 
-        takeoff_target = Pose()
-        takeoff_target.position.x = 0.0
-        takeoff_target.position.y = 0.0
-        takeoff_target.position.z = self.goal_height/4
-        takeoff_target.orientation.x = 0
-        takeoff_target.orientation.y = 0
-        takeoff_target.orientation.z = 0
-        takeoff_target.orientation.w = 1
+        takeoff_target = get_pose(0.0, 0.0, self.goal_height/4)
         self.waypoints.append(takeoff_target)
         print("first goal: ", takeoff_target)
 
-        self.goal_pose = Pose()
-        self.goal_pose.position.x = 0.0
-        self.goal_pose.position.y = 0.0
-        self.goal_pose.orientation.x = 0
-        self.goal_pose.orientation.y = 0
-        self.goal_pose.orientation.z = 0
-        self.goal_pose.orientation.w = 1
+        self.goal_pose = get_pose(0.0, 0.0, 0.0)
         print("goal: ", self.goal_pose)
         self.waypoints.append(self.goal_pose)
         
         self.curr_waypoint = self.waypoint_pop() 
 
-
+    # Service callbacks
     def handle_abort(self):
         print('Abort Requested. Your drone should land immediately due to safety considerations')
         exit()
-        return EmptyResponse()
-
-    # Service callbacks
-    def callback_launch(self,request):
-        self.handle_launch()
-        return EmptyResponse()
-
-    def callback_test(self,request):
-        self.handle_test()
-        return EmptyResponse()
-
-    def callback_land(self,request):
-        self.handle_land()
-        return EmptyResponse()
-
-    def callback_abort(self,request):
-        self.handle_abort()
         return EmptyResponse()
     
     def callback_pose(self, pose):
@@ -268,19 +230,6 @@ class CommNode:
         msg.header.frame_id = 'map'
         self.setpoint_pub_.publish(msg)
     
-    def set_velocity(self, linear_vel : np.ndarray):
-        '''publish linear velocity to pixhawk, angular velocity is forced to be zero'''
-        assert linear_vel.shape == (3, )
-        mag = np.linalg.norm(linear_vel)
-        linear_vel = linear_vel / mag * min(mag, self.max_vel)
-        twist = Twist()
-        twist.linear.x = linear_vel[0]
-        twist.linear.y = linear_vel[1]
-        twist.linear.z = linear_vel[2]
-        self.setpoint_vel_pub_.publish(twist)
-
-    def velocity_command_to_point(self, point : np.ndarray):
-        pass
 
     def run(self):
         rate = rospy.Rate(20)
@@ -297,14 +246,7 @@ class CommNode:
         arm_cmd = CommandBoolRequest()
         arm_cmd.value = True
 
-        takeoff_target = Pose()
-        takeoff_target.position.x = 0.0
-        takeoff_target.position.y = 0.0
-        takeoff_target.position.z = 0.0       
-        takeoff_target.orientation.x = 0
-        takeoff_target.orientation.y = 0
-        takeoff_target.orientation.z = 0
-        takeoff_target.orientation.w = 1
+        takeoff_target = get_pose(0.0, 0.0, 0.0)
 
         while(not rospy.is_shutdown() and self.current_state.mode != "OFFBOARD" and not self.current_state.armed):
             armed = self.arming_client.call(arm_cmd)
