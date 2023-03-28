@@ -1,9 +1,27 @@
-# error_code_-11
-ROB521
+## 4 Big Fans Presentation
+[Link to Presentation](https://drive.google.com/file/d/1SXaAo4kKU2I0bGitEJTaIawt3QIA2Qyr/view?usp=share_link)
+
 
 # To launch the drone:
+
+### Remote SSH to Jetson:
+```
+ssh rob498@10.42.0.113
+```
+
+### Terminal 1: Arm the drone in offboard mode
 ```
 roslaunch bringup bringup.launch
+```
+
+### Terminal 2: 
+To launch the drone
+```
+rosservice call rob498_drone_13/comm/launch
+```
+To land the drone
+```
+rosservice call rob498_drone_13/comm/land
 ```
 
 
