@@ -6,6 +6,7 @@ from tf import TransformBroadcaster, TransformListener
 from mavros_msgs.msg import State
 from mavros_msgs.srv import CommandBool, CommandBoolRequest, SetMode, SetModeRequest
 import numpy as np
+from comm_node import vicon_transforms
 
 class CommNode:
     def __init__(self):
@@ -65,6 +66,7 @@ class CommNode:
 
         self.current_state = State()
         self.active = False
+    
 
     # TODO - setup vicon subscriber here and callback functions below
     def is_close(self, pose1, pose2):
