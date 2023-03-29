@@ -94,8 +94,7 @@ class CommNode:
     def is_close(self, pose1, pose2):
         p1 = pose1.position
         p2 = pose2.position
-        dist = dist(p1, p2)
-        return dist < self.dist_tolerance
+        return dist(p1, p2) < self.dist_tolerance
 
     def create_waypoints(self, new_goal):
         '''TODO: for challenge 3
@@ -245,7 +244,7 @@ class CommNode:
         msg.pose = pose
         msg.header.stamp = rospy.Time.now()
         # TODO - add frame
-        msg.header.frame_id = 'map'
+        msg.header.frame_id = 'Map'
         self.setpoint_pub_.publish(msg)
     
 
@@ -301,6 +300,9 @@ class CommNode:
 
         
 if __name__ == "__main__":
+    # print("im here")
+    # xxx
+    # exit()
     comm_node = CommNode()
     comm_node.run()
     rospy.spin()
