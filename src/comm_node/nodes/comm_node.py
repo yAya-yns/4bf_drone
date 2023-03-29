@@ -5,6 +5,7 @@ from geometry_msgs.msg import Pose, PoseStamped, PoseArray
 from mavros_msgs.msg import State
 from mavros_msgs.srv import CommandBool, CommandBoolRequest, SetMode, SetModeRequest
 import numpy as np
+import threading
 
 def get_pose(x, y, z):
     ret = Pose()
@@ -16,6 +17,17 @@ def get_pose(x, y, z):
     ret.orientation.z = 0
     ret.orientation.w = 1
     return ret
+
+def dist(p1, p2):
+    # both are pose.position
+    return np.linalg.norm((np.array([p1.x, p1.y, p1.z]) - np.array([p2.x, p2.y, p2.z])))
+
+def direct(p1, p2):
+    # going 1 --> 2
+    p1 = np.array([p1.x, p1.y, p1.z])
+    p2 = np.array([p2.x, p2.y, p2.z])
+    d = p2 - p1
+    return d/np.linalg.norm
 
 
 class CommNode:
@@ -67,6 +79,7 @@ class CommNode:
         self.waypoints_recived = False
         self.curr_waypoint = None
         self.curr_pose = None
+        self.lock = threading.Lock()
 
         self.current_state = State()
         self.active = False
@@ -80,40 +93,39 @@ class CommNode:
     def is_close(self, pose1, pose2):
         p1 = pose1.position
         p2 = pose2.position
-        dist = np.linalg.norm((np.array([p1.x, p1.y, p1.z]) - np.array([p2.x, p2.y, p2.z])))
+        dist = dist(p1, p2)
         return dist < self.dist_tolerance
 
-    def create_waypoints(self):
-        '''TODO: for challenge 3'''
+    def create_waypoints(self, new_goal):
+        '''TODO: for challenge 3
+        generate new set of waypoints for each new goal point (This way can be used for challenge 2 and 3)'''
+        
         print('generating waypoints...')
         gen_points = True
-
-        # right now, curr_pose should just be on the ground the only change from initial pose to goal is z
-        self.goal_pose = Pose()
-        cp = self.curr_pose.position # so it doesnt change half way lol
-        self.goal_pose.position.x = cp.x
-        self.goal_pose.position.y = cp.y
-        self.goal_pose.position.z = self.goal_height
-
+        self.lock.acquire()
+        last_waypoint = self.waypoints[-1]
+        direction = direct(last_waypoint.position, new_goal.position) # unit vector from current to new goal
+        
+        # keep adding sub waypoints from the last added point until we read the new goal
         while gen_points:
-            if self.waypoints[-1].position.z == self.goal_height:
+            # check how close we are
+            if self.is_close(new_goal, self.waypoints[-1]):
+                self.waypoints.append(new_goal)
                 gen_points = False
                 break
-            if self.is_close(self.goal_pose, self.waypoints[-1]):
-                self.waypoints.append(goal_pose_stamp)
-                gen_points = False
-                break
+            dist = dist(new_goal.position, self.waypoints[-1].position)
+            p1 = np.array([self.waypoints[-1].position.x, self.waypoints[-1].position.y, self.waypoints[-1].position.z])
+            p2 = np.array([new_goal.position.x, new_goal.position.y, new_goal.position.z])
+            # use sub distance
+            new = p1 + direction * self.sub_dist
 
-            point = Pose()
-            point.header.frame_id = head
-            point.position.x = cp.x
-            point.position.y = cp.y
-            point.position.z = cp.z + self.sub_dist
+            point = get_pose(new[0], new[1], new[2])
 
             self.waypoints.append(point)
 
         print("finished. \nWAYPOINTS:")
         print(self.waypoints)
+        self.lock.release()
 
     # def callback_waypoints(self, msg):
     #     if self.waypoints_recived:
@@ -141,10 +153,15 @@ class CommNode:
         print(self.class_name_)
 
         self.goal_pose = get_pose(0.0, 0.0, self.goal_height)
-        print("goal: ", self.goal_pose)
+        self.create_waypoints(self.goal_pose)
+
+
+        #   COMMENTED OUT TO TEST SUBWAY POINT GENERATION 
+        # self.goal_pose = get_pose(0.0, 0.0, self.goal_height)
+        # print("goal: ", self.goal_pose)
         
-        self.waypoints.append(self.goal_pose)
-        self.curr_waypoint = self.waypoint_pop()
+        # self.waypoints.append(self.goal_pose)
+        # self.curr_waypoint = self.waypoint_pop()
 
     def handle_test(self):
         print('Test Requested. Your drone should perform the required tasks. Recording starts now.')
