@@ -1,12 +1,34 @@
 #!/usr/bin/env python
 import rospy
 from std_srvs.srv import Empty, EmptyResponse
-from geometry_msgs.msg import Pose, PoseStamped, TransformStamped, PoseArray
-from tf import TransformBroadcaster, TransformListener
+from geometry_msgs.msg import Pose, PoseStamped, PoseArray
 from mavros_msgs.msg import State
 from mavros_msgs.srv import CommandBool, CommandBoolRequest, SetMode, SetModeRequest
 import numpy as np
+import threading
 from comm_node import vicon_transforms
+
+def get_pose(x, y, z):
+    ret = Pose()
+    ret.position.x = x
+    ret.position.y = y
+    ret.position.z = z
+    ret.orientation.x = 0
+    ret.orientation.y = 0
+    ret.orientation.z = 0
+    ret.orientation.w = 1
+    return ret
+
+def dist(p1, p2):
+    # both are pose.position
+    return np.linalg.norm((np.array([p1.x, p1.y, p1.z]) - np.array([p2.x, p2.y, p2.z])))
+
+def direct(p1, p2):
+    # going 1 --> 2
+    p1 = np.array([p1.x, p1.y, p1.z])
+    p2 = np.array([p2.x, p2.y, p2.z])
+    d = p2 - p1
+    return d/np.linalg.norm
 
 class CommNode:
     def __init__(self):
@@ -14,13 +36,13 @@ class CommNode:
         print('node_name should be rob498_drone_TeamID. Service topics should follow the name convention below')
         print('The TAs will test these service calls prior to flight')
         print('Your own code should be integrated into this node')
-
+        
         node_name = 'rob498_drone_13'
         rospy.init_node(node_name) 
-        self.srv_launch = rospy.Service(node_name + '/comm/launch', Empty, self.callback_launch)
-        self.srv_test = rospy.Service(node_name + '/comm/test', Empty, self.callback_test)
-        self.srv_land = rospy.Service(node_name + '/comm/land', Empty, self.callback_land)
-        self.srv_abort = rospy.Service(node_name + '/comm/abort', Empty, self.callback_abort)
+        self.srv_launch = rospy.Service(node_name + '/comm/launch', Empty, lambda r: self.handle_launch())
+        self.srv_test = rospy.Service(node_name + '/comm/test', Empty, lambda r: self.handle_test())
+        self.srv_land = rospy.Service(node_name + '/comm/land', Empty, lambda r: self.handle_land())
+        self.srv_abort = rospy.Service(node_name + '/comm/abort', Empty, lambda r: self.handle_abort())
 
         rospy.wait_for_service("/mavros/set_mode")
         self.set_mode_client = rospy.ServiceProxy("mavros/set_mode", SetMode)
@@ -28,137 +50,92 @@ class CommNode:
         rospy.wait_for_service("/mavros/cmd/arming")
         self.arming_client = rospy.ServiceProxy("mavros/cmd/arming", CommandBool)  
 
-
         # Pubs, Subs and Transforms
         self.setpoint_pub_ = rospy.Publisher("/mavros/setpoint_position/local", PoseStamped, queue_size=10)
-        self.local_pose_sub = rospy.Subscriber("/mavros/local_position/pose", PoseStamped, callback = self.pose_cb) # in map frame
-        self.vicon_sub = rospy.Subscriber("/vicon/ROB498_Drone/ROB498_Drone", TransformStamped, callback = self.vicon_cb)
+        self.local_pose_sub = rospy.Subscriber("/mavros/local_position/pose", PoseStamped, callback = self.callback_pose)
+        
         self.state_sub = rospy.Subscriber("/mavros/state", State, callback = self.state_cb)
-        self.sub_waypoints = rospy.Subscriber(node_name+'/comm/waypoints', PoseArray, self.callback_waypoints)
+        # self.sub_waypoints = rospy.Subscriber(node_name+'/comm/waypoints', PoseArray, self.callback_waypoints) TODO: add back this after velocity command testing
 
-        # Transforms
-        self.transform_broadcaster = TransformBroadcaster()
-        self.transform_listener = TransformListener()
-        self.vicon_frame = "base_link" # TODO change this back "vicon"
-        self.baselink_frame = "base_link"
-        self.odom_frame = "odom" 
-
+        # # Transforms TODO: add back after velocity testing
+        # self.transform_broadcaster = TransformBroadcaster()
+        # self.transform_listener = TransformListener()
+        # self.vicon_frame = "base_link" # TODO change this back "vicon"
+        # self.baselink_frame = "base_link"
+        # self.odom_frame = "odom" 
         self.class_name_ = "CommNode::"
         self.max_vel = 0.2 #m/s
         self.goal_height = 1.6 #m
 
-        self.goal_pose = PoseStamped()
-        self.goal_pose.header.frame_id = self.vicon_frame
-        self.goal_pose.pose.position.x = 0
-        self.goal_pose.pose.position.y = 0
-        self.goal_pose.pose.position.z = self.goal_height
+        self.goal_pose = get_pose(0, 0, self.goal_height)
 
         self.ground_height = 0.1 #m
         self.launch = False
 
         self.sub_dist = 0.1 #dist between each waypoint?
         self.dist_tolerance = 0.1 #tolerance before moving to next waypoint
-        self.waypoints = []
+        self.waypoints = [] # collection of pose
         self.waypoints_arr = np.empty((0,3))
+        self.waypoints_recived = False
         self.curr_waypoint = None
         self.curr_pose = None
-        self.waypoints_recived = False
+        self.lock = threading.Lock()
 
         self.current_state = State()
         self.active = False
     
-
-    # TODO - setup vicon subscriber here and callback functions below
-    def is_close(self, pose1, pose2):
-        p1 = pose1.pose.position
-        p2 = pose2.pose.position
-        dist = np.linalg.norm((np.array([p1.x, p1.y, p1.z]) - np.array([p2.x, p2.y, p2.z])))
-        return dist < self.dist_tolerance
-
-    # SAME CODE AS OTHER BUT WRONG FRAME i THINK
-    # def create_waypoints(self):
-    #     print('generating waypoints...')
-    #     gen_points = True
-
-    #     # right now, curr_pose should just be on the ground the only change from initial pose to goal is z
-    #     self.goal_pose = Pose()
-    #     cp = self.curr_pose.position # so it doesnt change half way lol
-    #     self.goal_pose.position.x = cp.x
-    #     self.goal_pose.position.y = cp.y
-    #     self.goal_pose.position.z = self.goal_height
-
-    #     while gen_points:
-    #         if self.waypoints[-1].position.z == self.goal_height:
-    #             gen_points = False
-    #             break
-    #         if self.is_close(self.goal_pose, self.waypoints[-1]):
-    #             self.waypoints.append(goal_pose_stamp)
-    #             gen_points = False
-    #             break
-
-    #         point = Pose()
-    #         point.header.frame_id = head
-    #         point.position.x = cp.x
-    #         point.position.y = cp.y
-    #         point.position.z = cp.z + self.sub_dist
-
-    #         self.waypoints.append(point)
-
-    #     print("finished. \nWAYPOINTS:")
-    #     print(self.waypoints)
-
-    def callback_waypoints(self, msg):
-        if self.waypoints_recived:
-            return
-        print('Waypoints Received')
-        self.waypoints_recived = True
-        for pose in msg.poses:
-            pos = np.array([pose.position.x, pose.position.y, pose.position.z])
-            self.waypoints_arr = np.vstack((self.waypoints_arr, pos))
-
-    def vicon_cb(self, msg):
-        # Creates TF connection from child_frame (self.vicon_frame?) to header_frame (self.baselink_frame?)
-        self.transform_broadcaster(msg.transform.translation, 
-                                   msg.transform.rotation, 
-                                   rospy.Time.now(),
-                                   msg.child_frame_id,
-                                   msg.header.frame_id)
 
     def state_cb(self, msg):
         self.current_state = msg
         if self.current_state.connected == True:
             self.active = True
 
+    # TODO - setup vicon subscriber here and callback functions below
     def is_close(self, pose1, pose2):
         p1 = pose1.position
         p2 = pose2.position
-        dist = np.linalg.norm((np.array([p1.x, p1.y, p1.z]) - np.array([p2.x, p2.y, p2.z])))
+        dist = dist(p1, p2)
         return dist < self.dist_tolerance
 
-    def create_waypoints(self):
+    def create_waypoints(self, new_goal):
+        '''TODO: for challenge 3
+        generate new set of waypoints for each new goal point (This way can be used for challenge 2 and 3)'''
+        
         print('generating waypoints...')
         gen_points = True
+        self.lock.acquire()
+        last_waypoint = self.waypoints[-1]
+        direction = direct(last_waypoint.position, new_goal.position) # unit vector from current to new goal
+        
+        # keep adding sub waypoints from the last added point until we read the new goal
+        while gen_points:
+            # check how close we are
+            if self.is_close(new_goal, self.waypoints[-1]):
+                self.waypoints.append(new_goal)
+                gen_points = False
+                break
+            dist = dist(new_goal.position, self.waypoints[-1].position)
+            p1 = np.array([self.waypoints[-1].position.x, self.waypoints[-1].position.y, self.waypoints[-1].position.z])
+            p2 = np.array([new_goal.position.x, new_goal.position.y, new_goal.position.z])
+            # use sub distance
+            new = p1 + direction * self.sub_dist
 
-        # right now, we should be in the air. hovering at z = 1.5
-        for i in range(self.waypoints_arr.shape[0]):
-            # generate pose stamped messages to send to the drone
-
-            point = PoseStamped()
-            point.header.frame_id = self.vicon_frame # rn vicon frame kinda broken. Might have to switch back to drone frame
-            point.pose.position.x = self.waypoints_arr[i, 0]
-            point.pose.position.y = self.waypoints_arr[i, 1]
-            point.pose.position.z = self.waypoints_arr[i, 2]
-            point.pose.orientation.x = 0
-            point.pose.orientation.y = 0
-            point.pose.orientation.z = 0
-            point.pose.orientation.w = 1
-
-            # TODO NEED TO TRANSFORM IT BACK TO DRONE FRAME TO SEND OUT POSITION THINGS
+            point = get_pose(new[0], new[1], new[2])
 
             self.waypoints.append(point)
 
         print("finished. \nWAYPOINTS:")
         print(self.waypoints)
+        self.lock.release()
+
+    # def callback_waypoints(self, msg):
+    #     if self.waypoints_recived:
+    #         return
+    #     print('Waypoints Received')
+    #     self.waypoints_recived = True
+    #     for pose in msg.poses:
+    #         pos = np.array([pose.position.x, pose.position.y, pose.position.z])
+    #         self.waypoints_arr = np.vstack((self.waypoints_arr, pos))
     
     def waypoint_pop(self):
         next_waypoint = self.waypoints[0]
@@ -168,47 +145,41 @@ class CommNode:
 
   # Callback handlers
     def handle_launch(self):
-        # handler for task 2
         print('Launch Requested. Your drone should take off.')
         if not self.active:
             print("Cannot launch, not connected yet")
             return EmptyResponse()
-        
         function_name = "handle_launch:"
         # only add waypoints. Main loop will do the pose publishing
         print(self.class_name_)
 
-        self.goal_pose = PoseStamped()
-        self.goal_pose.header.frame_id = self.vicon_frame
-        self.goal_pose.pose.position.x = 0.0
-        self.goal_pose.pose.position.y = 0.0
-        self.goal_pose.pose.position.z = self.goal_height
+        self.goal_pose = get_pose(0.0, 0.0, self.goal_height)
+        self.create_waypoints(self.goal_pose)
+
+
+        #   COMMENTED OUT TO TEST SUBWAY POINT GENERATION 
+        # self.goal_pose = get_pose(0.0, 0.0, self.goal_height)
+        # print("goal: ", self.goal_pose)
         
-        self.goal_pose.pose.orientation.x = 0
-        self.goal_pose.pose.orientation.y = 0
-        self.goal_pose.pose.orientation.z = 0
-        self.goal_pose.pose.orientation.w = 1
-        print("goal: ", self.goal_pose)
-        
-        self.waypoints.append(self.goal_pose)
-        self.curr_waypoint = self.waypoint_pop()
+        # self.waypoints.append(self.goal_pose)
+        # self.curr_waypoint = self.waypoint_pop()
 
     def handle_test(self):
         print('Test Requested. Your drone should perform the required tasks. Recording starts now.')
         
-        ######## okay lol uncomment for #3
-        if self.waypoints_arr == np.zeros((0,3)):
-            print('have not recieved waypoint array')
-            print('TEST FAIL')
-            return EmptyResponse()
-        else:
-            self.create_waypoints()
-        if len(self.waypoints) == self.waypoints_arr.shape[0]:
-            print('waypoint creation success')
-        else:
-            print('waypoint creation FAIL')
-            print('TEST FAIL')
-            return EmptyResponse()
+        ######### okay lol uncomment for #3
+        # if self.waypoints_arr == np.zeros((0,3)): # TODO: uncomment after velicity test
+        #     print('have not recieved waypoint array')
+        #     print('TEST FAIL')
+        #     return EmptyResponse()
+        # else:
+        #     self.create_waypoints()
+        # if len(self.waypoints) == self.waypoints_arr.shape[0]:
+        #     print('waypoint creation success')
+        # else:
+        #     print('waypoint creation FAIL')
+        #     print('TEST FAIL')
+        #     return EmptyResponse()
 
         # check if on ground, check connection to realsense and can see odom messages
         if not self.active:
@@ -243,55 +214,23 @@ class CommNode:
         # only add waypoints. Main loop will do the pose publishing
         self.waypoints = []
 
-        takeoff_target = PoseStamped()
-        takeoff_target.header.frame_id = self.vicon_frame
-        takeoff_target.pose.position.x = 0.0
-        takeoff_target.pose.position.y = 0.0
-        takeoff_target.pose.position.z = self.goal_height/4
-        takeoff_target.pose.orientation.x = 0
-        takeoff_target.pose.orientation.y = 0
-        takeoff_target.pose.orientation.z = 0
-        takeoff_target.pose.orientation.w = 1
+        takeoff_target = get_pose(0.0, 0.0, self.goal_height/4)
         self.waypoints.append(takeoff_target)
         print("first goal: ", takeoff_target)
 
-        self.goal_pose = PoseStamped()
-        self.goal_pose.header.frame_id = self.vicon_frame
-        self.goal_pose.pose.position.x = 0.0
-        self.goal_pose.pose.position.y = 0.0
-        self.goal_pose.pose.orientation.x = 0
-        self.goal_pose.pose.orientation.y = 0
-        self.goal_pose.pose.orientation.z = 0
-        self.goal_pose.pose.orientation.w = 1
+        self.goal_pose = get_pose(0.0, 0.0, 0.0)
         print("goal: ", self.goal_pose)
         self.waypoints.append(self.goal_pose)
         
         self.curr_waypoint = self.waypoint_pop() 
 
-
+    # Service callbacks
     def handle_abort(self):
         print('Abort Requested. Your drone should land immediately due to safety considerations')
         exit()
         return EmptyResponse()
-
-    # Service callbacks
-    def callback_launch(self,request):
-        self.handle_launch()
-        return EmptyResponse()
-
-    def callback_test(self,request):
-        self.handle_test()
-        return EmptyResponse()
-
-    def callback_land(self,request):
-        self.handle_land()
-        return EmptyResponse()
-
-    def callback_abort(self,request):
-        self.handle_abort()
-        return EmptyResponse()
     
-    def pose_cb(self, pose):
+    def callback_pose(self, pose):
         self.curr_pose = pose.pose
         return EmptyResponse()
 
@@ -301,12 +240,14 @@ class CommNode:
     *
     *  @param[in] geometry_msgs pose in FLU frame, [m/rad]
     '''
-    def set_position(self, poseStamped):
-        # Transform incoming from vicon to baselink at the latest time
-        # msg = self.transform_listener.transformPose(self.odom_frame, poseStamped)
-
-        poseStamped.header.stamp = rospy.Time.now()
+    def set_position(self, pose):
+        msg = PoseStamped()
+        msg.pose = pose
+        msg.header.stamp = rospy.Time.now()
+        # TODO - add frame
+        msg.header.frame_id = 'map'
         self.setpoint_pub_.publish(msg)
+    
 
     def run(self):
         rate = rospy.Rate(20)
@@ -323,15 +264,7 @@ class CommNode:
         arm_cmd = CommandBoolRequest()
         arm_cmd.value = True
 
-        takeoff_target = PoseStamped()
-        takeoff_target.header.frame_id = self.vicon_frame
-        takeoff_target.pose.position.x = 0.0
-        takeoff_target.pose.position.y = 0.0
-        takeoff_target.pose.position.z = 0.0       
-        takeoff_target.pose.orientation.x = 0
-        takeoff_target.pose.orientation.y = 0
-        takeoff_target.pose.orientation.z = 0
-        takeoff_target.pose.orientation.w = 1
+        takeoff_target = get_pose(0.0, 0.0, 0.0)
 
         while(not rospy.is_shutdown() and self.current_state.mode != "OFFBOARD" and not self.current_state.armed):
             armed = self.arming_client.call(arm_cmd)
@@ -373,4 +306,3 @@ if __name__ == "__main__":
     rospy.spin()
     # rosservice call rob498_drone_13/comm/launch
     # rosservice call rob498_drone_13/comm/land
-
