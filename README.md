@@ -7,7 +7,15 @@
 ### Remote SSH to Jetson:
 ```
 ssh rob498@10.42.0.113
+cd 4bf_drone/
+source devel/setup.sh
 ```
+If `devel/` does not exist:
+```
+cd 4bf_drone/
+catkin build
+```
+
 
 ### Terminal 1: Arm the drone in offboard mode
 ```
