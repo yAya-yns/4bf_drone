@@ -6,6 +6,7 @@ from mavros_msgs.msg import State
 from mavros_msgs.srv import CommandBool, CommandBoolRequest, SetMode, SetModeRequest
 import numpy as np
 import threading
+from comm_node import vicon_transforms
 
 def get_pose(x, y, z):
     ret = Pose()
@@ -28,7 +29,6 @@ def direct(p1, p2):
     p2 = np.array([p2.x, p2.y, p2.z])
     d = p2 - p1
     return d/np.linalg.norm
-
 
 class CommNode:
     def __init__(self):
@@ -83,6 +83,7 @@ class CommNode:
 
         self.current_state = State()
         self.active = False
+    
 
     def state_cb(self, msg):
         self.current_state = msg
