@@ -55,14 +55,10 @@ class CommNode:
         self.local_pose_sub = rospy.Subscriber("/mavros/local_position/pose", PoseStamped, callback = self.callback_pose)
         
         self.state_sub = rospy.Subscriber("/mavros/state", State, callback = self.state_cb)
+        self.vicon_sub = rospy.Subscriber("/vicon/ROB498_Drone/ROB498_Drone", State, callback = self.callback_vicon)
         # self.sub_waypoints = rospy.Subscriber(node_name+'/comm/waypoints', PoseArray, self.callback_waypoints) TODO: add back this after velocity command testing
 
         # # Transforms TODO: add back after velocity testing
-        # self.transform_broadcaster = TransformBroadcaster()
-        # self.transform_listener = TransformListener()
-        # self.vicon_frame = "base_link" # TODO change this back "vicon"
-        # self.baselink_frame = "base_link"
-        # self.odom_frame = "odom" 
         self.class_name_ = "CommNode::"
         self.max_vel = 0.2 #m/s
         self.goal_height = 1.6 #m
@@ -79,6 +75,10 @@ class CommNode:
         self.waypoints_recived = False
         self.curr_waypoint = None
         self.curr_pose = None
+
+        # Transform stuff
+        self.curr_vicon = None
+        self.vicon_odom_transform = None
         self.lock = threading.Lock()
 
         self.current_state = State()
@@ -232,6 +232,10 @@ class CommNode:
     def callback_pose(self, pose):
         self.curr_pose = pose.pose
         return EmptyResponse()
+    
+    def callback_vicon(self, vicon):
+        self.curr_vicon = vicon
+        return EmptyResponse()
 
     # Our functions:
     '''
@@ -284,6 +288,15 @@ class CommNode:
             self.set_position(takeoff_target)
             rate.sleep()
 
+        while (self.curr_vicon is None):
+            rospy.loginfo("waiting for valid current vicon")
+            self.set_position(takeoff_target)
+            rate.sleep()
+
+        self.vicon_odom_transform =\
+            vicon_transforms.get_vicon_to_odom_transform(\
+                self.curr_vicon, self.curr_pose)
+
         print(self.curr_pose)
         self.curr_waypoint = self.waypoint_pop()
         while(not rospy.is_shutdown()):
@@ -294,8 +307,18 @@ class CommNode:
                     print("new waypoint : ", self.curr_waypoint.position.x, self.curr_waypoint.position.y, self.curr_waypoint.position.z)
                     
             self.set_position(self.curr_waypoint)
-            print("curr pose: ", self.curr_pose.position.x, self.curr_pose.position.y, self.curr_pose.position.z)
-            print("target pose: ", self.curr_waypoint.position.x, self.curr_waypoint.position.y, self.curr_waypoint.position.z)
+            print("curr pose in local: ", self.curr_pose.position.x, self.curr_pose.position.y, self.curr_pose.position.z)
+            print("curr pose in vicon: ", self.curr_vicon.transform.translation.x, self.curr_vicon.transform.translation.y, self.curr_vicon.transform.translation.z)
+            print("target pose in local: ", self.curr_waypoint.position.x, self.curr_waypoint.position.y, self.curr_waypoint.position.z)
+            
+            self.vicon_odom_transform =\
+                vicon_transforms.get_vicon_to_odom_transform(\
+                    self.curr_vicon, self.curr_pose)
+
+            waypoint_transformed = vicon_transforms.transform_vicon_pose(self.vicon_odom_transform, self.curr_waypoint)
+            
+            print("target pose in vicon: ", self.curr_waypoint.position.x, self.curr_waypoint.position.y, self.curr_waypoint.position.z)
+            print("target pose in local: ", waypoint_transformed.position.x, waypoint_transformed.position.y, waypoint_transformed.position.z)
             rate.sleep()
 
         
