@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 import rospy
 from std_srvs.srv import Empty, EmptyResponse
-from geometry_msgs.msg import Pose, PoseStamped, PoseArray
+from geometry_msgs.msg import Pose, PoseStamped, PoseArray, TransformStamped
 from mavros_msgs.msg import State
 from mavros_msgs.srv import CommandBool, CommandBoolRequest, SetMode, SetModeRequest
 import numpy as np
@@ -55,7 +55,7 @@ class CommNode:
         self.local_pose_sub = rospy.Subscriber("/mavros/local_position/pose", PoseStamped, callback = self.callback_pose)
         
         self.state_sub = rospy.Subscriber("/mavros/state", State, callback = self.state_cb)
-        self.vicon_sub = rospy.Subscriber("/vicon/ROB498_Drone/ROB498_Drone", State, callback = self.callback_vicon)
+        self.vicon_sub = rospy.Subscriber("/vicon/ROB498_Drone/ROB498_Drone", TransformStamped, callback = self.callback_vicon)
         # self.sub_waypoints = rospy.Subscriber(node_name+'/comm/waypoints', PoseArray, self.callback_waypoints) TODO: add back this after velocity command testing
 
         # # Transforms TODO: add back after velocity testing
@@ -234,6 +234,7 @@ class CommNode:
         return EmptyResponse()
     
     def callback_vicon(self, vicon):
+        #print("got vicon")
         self.curr_vicon = vicon
         return EmptyResponse()
 
@@ -293,9 +294,9 @@ class CommNode:
             self.set_position(takeoff_target)
             rate.sleep()
 
-        self.vicon_odom_transform =\
-            vicon_transforms.get_vicon_to_odom_transform(\
-                self.curr_vicon, self.curr_pose)
+        #self.vicon_odom_transform =\
+        #    vicon_transforms.get_vicon_to_odom_transform(\
+        #        self.curr_vicon, self.curr_pose)
 
         print(self.curr_pose)
         self.curr_waypoint = self.waypoint_pop()
@@ -309,11 +310,12 @@ class CommNode:
             self.set_position(self.curr_waypoint)
             print("curr pose in local: ", self.curr_pose.position.x, self.curr_pose.position.y, self.curr_pose.position.z)
             print("curr pose in vicon: ", self.curr_vicon.transform.translation.x, self.curr_vicon.transform.translation.y, self.curr_vicon.transform.translation.z)
-            print("target pose in local: ", self.curr_waypoint.position.x, self.curr_waypoint.position.y, self.curr_waypoint.position.z)
-            
+            #print("target pose in local: ", self.curr_waypoint.position.x, self.curr_waypoint.position.y, self.curr_waypoint.position.z)
+            curr_pose_stamped = PoseStamped()
+            curr_pose_stamped.pose = self.curr_pose
             self.vicon_odom_transform =\
                 vicon_transforms.get_vicon_to_odom_transform(\
-                    self.curr_vicon, self.curr_pose)
+                    self.curr_vicon, curr_pose_stamped)
 
             waypoint_transformed = vicon_transforms.transform_vicon_pose(self.vicon_odom_transform, self.curr_waypoint)
             

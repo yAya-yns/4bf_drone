@@ -73,7 +73,8 @@ def get_vicon_to_odom_transform(vicon, odom):
                                 [r20, r21, r22, t_z],
                                 [0,   0,   0,   1]])
 
-    mat_vicon_odom = np.dot(mat_drone_odom,np.linalg.inv(mat_drone_vicon))
+    mat_vicon_odom = np.dot(np.linalg.inv(mat_drone_odom),mat_drone_vicon)
+    #mat_vicon_odom = np.dot(mat_drone_vicon, np.linalg.inv(mat_drone_odom))
     return mat_vicon_odom
     
 '''
@@ -116,6 +117,7 @@ def transform_vicon_pose(transform, pose):
                                 [0,   0,   0,   1]])
     
     mat_pose_local = np.dot(transform,mat_pose_vicon)
+    #mat_pose_local = np.dot(mat_pose_vicon, transform)
     pose_local = Pose()
     pose_local.position.x = mat_pose_local[0,3]
     pose_local.position.y = mat_pose_local[1,3]
