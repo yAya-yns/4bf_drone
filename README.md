@@ -33,6 +33,19 @@ rosservice call rob498_drone_13/comm/land
 ```
 
 
+# Camera Usage
+## Realsense T256
+```
+roslaunch realsense2_camera rs_t265.launch
+```
+You can check what data is available in another terminal using
+```
+rostopic list /camera
+```
+
+
+
+
 # Simuluation
 
 ## Setup: 
