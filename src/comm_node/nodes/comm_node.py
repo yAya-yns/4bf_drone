@@ -1,5 +1,7 @@
 #!/usr/bin/env python
 import rospy
+import tf
+import geometry_msgs
 from std_srvs.srv import Empty, EmptyResponse
 from geometry_msgs.msg import Pose, PoseStamped, PoseArray, TransformStamped
 from mavros_msgs.msg import State
@@ -8,15 +10,15 @@ import numpy as np
 import threading
 from comm_node import vicon_transforms
 
-def get_pose(x, y, z):
+def get_pose(x, y, z, qx = 0, qy = 0, qz = 0, qw = 1):
     ret = Pose()
     ret.position.x = x
     ret.position.y = y
     ret.position.z = z
-    ret.orientation.x = 0
-    ret.orientation.y = 0
-    ret.orientation.z = 0
-    ret.orientation.w = 1
+    ret.orientation.x = qx
+    ret.orientation.y = qy
+    ret.orientation.z = qz
+    ret.orientation.w = qw
     return ret
 
 def dist(p1, p2):
@@ -25,6 +27,7 @@ def dist(p1, p2):
 
 def direct(p1, p2):
     # going 1 --> 2
+    # unit vector pointing to p2 from p1
     p1 = np.array([p1.x, p1.y, p1.z])
     p2 = np.array([p2.x, p2.y, p2.z])
     d = p2 - p1
@@ -61,7 +64,7 @@ class CommNode:
         # # Transforms TODO: add back after velocity testing
         self.class_name_ = "CommNode::"
         self.max_vel = 0.2 #m/s
-        self.goal_height =1.6 #m
+        self.goal_height = 0.5 #m
 
         self.goal_pose = get_pose(0, 0, self.goal_height)
 
@@ -86,6 +89,8 @@ class CommNode:
 
         self.current_state = State()
         self.active = False
+
+        self.pause = False
     
 
     def state_cb(self, msg):
@@ -98,6 +103,20 @@ class CommNode:
         p1 = pose1.position
         p2 = pose2.position
         return dist(p1, p2) < self.dist_tolerance
+
+    def create_turn_point(self):
+        self.lock.acquire()
+        curr = self.curr_pose
+        next_point = self.waypoints[-1]
+
+        dir_vec = direct(curr.position, next_point.position)
+        angle = np.arctan2([dir_vec[1]], [dir_vec[0]])
+        quat = tf.transformations.quaternion_from_euler(0, 0, angle[0]) 
+        turn_point = get_pose(curr.position.x, curr.position.y, curr.position.z, quat[0], quat[1], quat[2], quat[3])
+        
+        self.push_waypoint_front(turn_point)
+        self.lock.release()
+        return
     
     def create_wiggle(self, new_goal):
         ''' add new goal and also wiggle in place to try to hit waypoint 
@@ -107,16 +126,17 @@ class CommNode:
         self.lock.acquire()
         print('generating wiggle points...')
         dist = 0.25
+        curr = self.curr_pose
 
-        new = get_pose(new_goal.position.x, new_goal.position.y, self.goal_height) 
+        safe_point = get_pose(new_goal.position.x, new_goal.position.y, self.goal_height, curr.orientation.x, curr.orientation.y, curr.orientation.z, curr.orientation.w) 
 
-        self.waypoints.append(new_goal)
-        # self.waypoints.append(new)
+        # self.waypoints.append(new_goal)
+        self.waypoints.append(safe_point)
 
         for x in range(-1, 1, 1):
             for y in range(-1, 1, 1):
                 # TODO uncomment this for real. rn test with set z position
-                new = get_pose(new_goal.position.x + x*dist, new_goal.position.y + y*dist, new_goal.position.z + x*dist)
+                new = get_pose(new_goal.position.x + x*dist, new_goal.position.y + y*dist, new_goal.position.z + x*dist, curr.orientation.x, curr.orientation.y, curr.orientation.z, curr.orientation.w)
                 # new = get_pose(new_goal.position.x + x*dist, new_goal.position.y + y*dist, self.goal_height)
                 self.waypoints.append(new)
 
@@ -124,37 +144,22 @@ class CommNode:
         self.lock.release()
         return
 
-    # def create_waypoints(self, new_goal):
-    #     '''TODO: for challenge 3
-    #     generate new set of waypoints for each new goal point (This way can be used for challenge 2 and 3)'''
-        
-    #     print('generating waypoints...')
-    #     gen_points = True
-    #     self.lock.acquire()
-    #     print("length of self.waypoints ", len(self.waypoints))
-    #     last_waypoint = self.waypoints[-1]
-    #     direction = direct(last_waypoint.position, new_goal.position) # unit vector from current to new goal
-        
-    #     # keep adding sub waypoints from the last added point until we read the new goal
-    #     while gen_points:
-    #         # check how close we are
-    #         if self.is_close(new_goal, self.waypoints[-1]):
-    #             self.waypoints.append(new_goal)
-    #             gen_points = False
-    #             break
-    #         # d = dist(new_goal.position, self.waypoints[-1].position)
-    #         p1 = np.array([self.waypoints[-1].position.x, self.waypoints[-1].position.y, self.waypoints[-1].position.z])
-    #         p2 = np.array([new_goal.position.x, new_goal.position.y, new_goal.position.z])
-    #         # use sub distance
-    #         new = p1 + direction * self.sub_dist
+    def push_waypoint_front(self, new_goal):
+        ''' add new goal to the front of the queue
+        new_goal: Pose()
+        '''
+        self.lock.acquire()
+        print('generating new front point...')
 
-    #         point = get_pose(new[0], new[1], new[2]) # IF OVERRIDE TO FIXED Z POSITION, get_pose(new[0], new[1], 0.5)
+        safe_point = get_pose(new_goal.position.x, new_goal.position.y, self.goal_height) 
 
-    #         self.waypoints.append(point)
+        new = [new_goal]
+        # new = [safe_point]
+        self.waypoints = new + self.waypoints
 
-    #     print("finished. \nWAYPOINTS:")
-    #     print("generated waypoints: ", self.waypoints)
-    #     self.lock.release()
+        print("finished. \nWAYPOINTS: ", self.waypoints)
+        self.lock.release()
+        return
 
     def callback_waypoints(self, msg):
         if self.waypoints_recived:
@@ -190,12 +195,11 @@ class CommNode:
 
         self.waypoints.append(get_pose(0, 0, self.goal_height))
 
-        #self.goal_pose = get_pose(0.0, 0.0, self.goal_height)
-        #self.create_wiggle(self.goal_pose)
-        # new = get_pose(1.0, 1.0, self.goal_height)
-        # self.create_wiggle(new)
-        # new = get_pose(0.0, 0.0, self.goal_height)
-        # self.create_wiggle(new)
+        new = get_pose(1.0, 1.0, self.goal_height)
+        self.push_waypoint_front(new)
+        self.create_wiggle(new)
+        new = get_pose(0.0, 0.0, self.goal_height)
+        self.create_wiggle(new)
 
         # self.goal_pose = get_pose(0.0, 0.0, self.goal_height)
         # self.create_waypoints(self.goal_pose)
@@ -204,19 +208,11 @@ class CommNode:
         # new = get_pose(0.0, 0.0, self.goal_height)
         # self.create_waypoints(new)
 
-
-        #   COMMENTED OUT TO TEST SUBWAY POINT GENERATION 
-        # self.goal_pose = get_pose(0.0, 0.0, self.goal_height)
-        # print("goal: ", self.goal_pose)
-        
-        # self.waypoints.append(self.goal_pose)
-        # self.curr_waypoint = self.waypoint_pop()
         return EmptyResponse()
 
     def handle_test(self):
         print('Test Requested. Your drone should perform the required tasks. Recording starts now.')
         
-        ######### okay lol uncomment for #3
         if self.waypoints_arr == np.zeros((0,3)): # TODO: uncomment after velicity test
             print('have not recieved waypoint array')
             print('TEST FAIL')
@@ -369,11 +365,14 @@ class CommNode:
             if self.curr_waypoint is None or self.is_close(self.curr_waypoint, pose_to_compare) or self.is_close(self.goal_pose, pose_to_compare): #last check should be redundant but better safe than sorry
                 if len(self.waypoints) > 0:
                     # print("current waypoint reached at : ", self.curr_waypoint.position.x, self.curr_waypoint.position.y, self.curr_waypoint.position.z)
-                    self.curr_waypoint = self.waypoint_pop()
-                    print("new waypoint : ", self.curr_waypoint.position.x, self.curr_waypoint.position.y, self.curr_waypoint.position.z)
+                    if not self.pause:
+                        self.curr_waypoint = self.waypoint_pop()
+                        print("new waypoint : ", self.curr_waypoint.position.x, self.curr_waypoint.position.y, self.curr_waypoint.position.z)
                     
             self.set_position(self.curr_waypoint)
             print("curr pose in local: ", self.curr_pose.position.x, self.curr_pose.position.y, self.curr_pose.position.z)
+            eul = tf.transformations.euler_from_quaternion((self.curr_pose.orientation.x, self.curr_pose.orientation.y, self.curr_pose.orientation.z, self.curr_pose.orientation.w))
+            print("curr orientation in locaL: ", eul)
             if self.vicon_enabled:
                 print("curr pose in vicon: ", self.curr_vicon.transform.translation.x, self.curr_vicon.transform.translation.y, self.curr_vicon.transform.translation.z)
             curr_pose_stamped = PoseStamped()
