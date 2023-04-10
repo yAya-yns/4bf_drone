@@ -28,7 +28,7 @@ def direct(p1, p2):
     p1 = np.array([p1.x, p1.y, p1.z])
     p2 = np.array([p2.x, p2.y, p2.z])
     d = p2 - p1
-    return d/np.linalg.norm
+    return d/np.linalg.norm(d)
 
 class CommNode:
     def __init__(self):
@@ -56,22 +56,23 @@ class CommNode:
         
         self.state_sub = rospy.Subscriber("/mavros/state", State, callback = self.state_cb)
         self.vicon_sub = rospy.Subscriber("/vicon/ROB498_Drone/ROB498_Drone", TransformStamped, callback = self.callback_vicon)
-        # self.sub_waypoints = rospy.Subscriber(node_name+'/comm/waypoints', PoseArray, self.callback_waypoints) TODO: add back this after velocity command testing
+        self.sub_waypoints = rospy.Subscriber(node_name + '/comm/waypoints', PoseArray, self.callback_waypoints) # TODO: add back this after velocity command testing
 
         # # Transforms TODO: add back after velocity testing
         self.class_name_ = "CommNode::"
         self.max_vel = 0.2 #m/s
-        self.goal_height = 1.6 #m
+        self.goal_height =1.6 #m
 
         self.goal_pose = get_pose(0, 0, self.goal_height)
 
-        self.ground_height = 0.1 #m
+        self.ground_height = 0.05 #m
         self.launch = False
 
-        self.sub_dist = 0.1 #dist between each waypoint?
-        self.dist_tolerance = 0.1 #tolerance before moving to next waypoint
+        self.sub_dist = 0.20 #dist between each waypoint?
+        self.dist_tolerance = 0.10 #tolerance before moving to next waypoint
         self.waypoints = [] # collection of pose
         self.waypoints_arr = np.empty((0,3))
+        self.waypoints_posearray = PoseArray()
         self.waypoints_recived = False
         self.curr_waypoint = None
         self.curr_pose = None
@@ -79,6 +80,8 @@ class CommNode:
         # Transform stuff
         self.curr_vicon = None
         self.vicon_odom_transform = None
+        self.vicon_enabled = False
+
         self.lock = threading.Lock()
 
         self.current_state = State()
@@ -95,46 +98,79 @@ class CommNode:
         p1 = pose1.position
         p2 = pose2.position
         return dist(p1, p2) < self.dist_tolerance
-
-    def create_waypoints(self, new_goal):
-        '''TODO: for challenge 3
-        generate new set of waypoints for each new goal point (This way can be used for challenge 2 and 3)'''
-        
-        print('generating waypoints...')
-        gen_points = True
+    
+    def create_wiggle(self, new_goal):
+        ''' add new goal and also wiggle in place to try to hit waypoint 
+        5cm box maybe. We can increase later
+        new_goal: Pose()
+        '''
         self.lock.acquire()
-        last_waypoint = self.waypoints[-1]
-        direction = direct(last_waypoint.position, new_goal.position) # unit vector from current to new goal
-        
-        # keep adding sub waypoints from the last added point until we read the new goal
-        while gen_points:
-            # check how close we are
-            if self.is_close(new_goal, self.waypoints[-1]):
-                self.waypoints.append(new_goal)
-                gen_points = False
-                break
-            dist = dist(new_goal.position, self.waypoints[-1].position)
-            p1 = np.array([self.waypoints[-1].position.x, self.waypoints[-1].position.y, self.waypoints[-1].position.z])
-            p2 = np.array([new_goal.position.x, new_goal.position.y, new_goal.position.z])
-            # use sub distance
-            new = p1 + direction * self.sub_dist
+        print('generating wiggle points...')
+        dist = 0.25
 
-            point = get_pose(new[0], new[1], new[2])
+        new = get_pose(new_goal.position.x, new_goal.position.y, self.goal_height) 
 
-            self.waypoints.append(point)
+        self.waypoints.append(new_goal)
+        # self.waypoints.append(new)
 
-        print("finished. \nWAYPOINTS:")
-        print(self.waypoints)
+        for x in range(-1, 1, 1):
+            for y in range(-1, 1, 1):
+                # TODO uncomment this for real. rn test with set z position
+                new = get_pose(new_goal.position.x + x*dist, new_goal.position.y + y*dist, new_goal.position.z + x*dist)
+                # new = get_pose(new_goal.position.x + x*dist, new_goal.position.y + y*dist, self.goal_height)
+                self.waypoints.append(new)
+
+        print("finished. \nWAYPOINTS: ", self.waypoints)
         self.lock.release()
+        return
 
-    # def callback_waypoints(self, msg):
-    #     if self.waypoints_recived:
-    #         return
-    #     print('Waypoints Received')
-    #     self.waypoints_recived = True
-    #     for pose in msg.poses:
-    #         pos = np.array([pose.position.x, pose.position.y, pose.position.z])
-    #         self.waypoints_arr = np.vstack((self.waypoints_arr, pos))
+    # def create_waypoints(self, new_goal):
+    #     '''TODO: for challenge 3
+    #     generate new set of waypoints for each new goal point (This way can be used for challenge 2 and 3)'''
+        
+    #     print('generating waypoints...')
+    #     gen_points = True
+    #     self.lock.acquire()
+    #     print("length of self.waypoints ", len(self.waypoints))
+    #     last_waypoint = self.waypoints[-1]
+    #     direction = direct(last_waypoint.position, new_goal.position) # unit vector from current to new goal
+        
+    #     # keep adding sub waypoints from the last added point until we read the new goal
+    #     while gen_points:
+    #         # check how close we are
+    #         if self.is_close(new_goal, self.waypoints[-1]):
+    #             self.waypoints.append(new_goal)
+    #             gen_points = False
+    #             break
+    #         # d = dist(new_goal.position, self.waypoints[-1].position)
+    #         p1 = np.array([self.waypoints[-1].position.x, self.waypoints[-1].position.y, self.waypoints[-1].position.z])
+    #         p2 = np.array([new_goal.position.x, new_goal.position.y, new_goal.position.z])
+    #         # use sub distance
+    #         new = p1 + direction * self.sub_dist
+
+    #         point = get_pose(new[0], new[1], new[2]) # IF OVERRIDE TO FIXED Z POSITION, get_pose(new[0], new[1], 0.5)
+
+    #         self.waypoints.append(point)
+
+    #     print("finished. \nWAYPOINTS:")
+    #     print("generated waypoints: ", self.waypoints)
+    #     self.lock.release()
+
+    def callback_waypoints(self, msg):
+        if self.waypoints_recived:
+            return
+        print('Waypoints Received')
+        self.waypoints_recived = True
+        self.waypoints_posearray = msg
+        for pose in msg.poses:
+            pos = np.array([pose.position.x, pose.position.y, pose.position.z])
+            self.waypoints_arr = np.vstack((self.waypoints_arr, pos))
+
+        print("-------------------------")
+        print("-------------------------")
+        print("-----WAYPOINT RECIEVED---")
+        print("=========================")
+
     
     def waypoint_pop(self):
         next_waypoint = self.waypoints[0]
@@ -152,8 +188,21 @@ class CommNode:
         # only add waypoints. Main loop will do the pose publishing
         print(self.class_name_)
 
-        self.goal_pose = get_pose(0.0, 0.0, self.goal_height)
-        self.create_waypoints(self.goal_pose)
+        self.waypoints.append(get_pose(0, 0, self.goal_height))
+
+        #self.goal_pose = get_pose(0.0, 0.0, self.goal_height)
+        #self.create_wiggle(self.goal_pose)
+        # new = get_pose(1.0, 1.0, self.goal_height)
+        # self.create_wiggle(new)
+        # new = get_pose(0.0, 0.0, self.goal_height)
+        # self.create_wiggle(new)
+
+        # self.goal_pose = get_pose(0.0, 0.0, self.goal_height)
+        # self.create_waypoints(self.goal_pose)
+        # new = get_pose(1.0, 1.0, self.goal_height)
+        # self.create_waypoints(new)
+        # new = get_pose(0.0, 0.0, self.goal_height)
+        # self.create_waypoints(new)
 
 
         #   COMMENTED OUT TO TEST SUBWAY POINT GENERATION 
@@ -162,39 +211,35 @@ class CommNode:
         
         # self.waypoints.append(self.goal_pose)
         # self.curr_waypoint = self.waypoint_pop()
+        return EmptyResponse()
 
     def handle_test(self):
         print('Test Requested. Your drone should perform the required tasks. Recording starts now.')
         
         ######### okay lol uncomment for #3
-        # if self.waypoints_arr == np.zeros((0,3)): # TODO: uncomment after velicity test
-        #     print('have not recieved waypoint array')
-        #     print('TEST FAIL')
-        #     return EmptyResponse()
-        # else:
-        #     self.create_waypoints()
-        # if len(self.waypoints) == self.waypoints_arr.shape[0]:
-        #     print('waypoint creation success')
-        # else:
-        #     print('waypoint creation FAIL')
-        #     print('TEST FAIL')
-        #     return EmptyResponse()
+        if self.waypoints_arr == np.zeros((0,3)): # TODO: uncomment after velicity test
+            print('have not recieved waypoint array')
+            print('TEST FAIL')
+            return EmptyResponse()
+        else:
+            for pose in self.waypoints_posearray.poses:
+                self.create_wiggle(pose)
 
-        # check if on ground, check connection to realsense and can see odom messages
+        if len(self.waypoints) == self.waypoints_arr.shape[0] * 5:
+            print('waypoint creation success')
+        else:
+            print('waypoint creation FAIL')
+            print('TEST FAIL')
+            return EmptyResponse()
+
+        # check connection to realsense and can see odom messages
         if not self.active:
             print("Cannot test, not connected yet")
             return EmptyResponse()
             
         if self.curr_pose != None:
             print('can recieve odom measurements')
-            if self.curr_pose.position.z < self.ground_height:
-                print('on ground and can recieve pose measurements')
-                print('TEST SUCCESS')
-                return EmptyResponse()
-            else:
-                print('not on the ground. Cannot start')
-                print('TEST FAIL')
-                return EmptyResponse()
+            return EmptyResponse()
         else:
             print('CANNOT recieve odom measurements')
             print('TEST FAIL')
@@ -222,6 +267,7 @@ class CommNode:
         self.waypoints.append(self.goal_pose)
         
         self.curr_waypoint = self.waypoint_pop() 
+        return EmptyResponse()
 
     # Service callbacks
     def handle_abort(self):
@@ -246,10 +292,21 @@ class CommNode:
     '''
     def set_position(self, pose):
         msg = PoseStamped()
-        msg.pose = pose
         msg.header.stamp = rospy.Time.now()
         # TODO - add frame
-        msg.header.frame_id = 'Map'
+        curr_pose_stamped = PoseStamped()
+        curr_pose_stamped.pose = self.curr_pose
+        if self.vicon_enabled:
+            self.vicon_odom_transform =\
+                vicon_transforms.get_vicon_to_odom_transform(\
+                    self.curr_vicon, curr_pose_stamped)
+
+            pose_transformed = vicon_transforms.transform_vicon_pose(self.vicon_odom_transform, pose)
+            msg.header.frame_id = 'odom'
+            msg.pose = pose_transformed
+            print("target pose in local: ", pose_transformed.position.x, pose_transformed.position.y, pose_transformed.position.z)
+        else:
+            msg.pose = pose
         self.setpoint_pub_.publish(msg)
     
 
@@ -288,11 +345,11 @@ class CommNode:
             rospy.loginfo("waiting for valid current pose")
             self.set_position(takeoff_target)
             rate.sleep()
-
-        while (self.curr_vicon is None):
-            rospy.loginfo("waiting for valid current vicon")
-            self.set_position(takeoff_target)
-            rate.sleep()
+        if self.vicon_enabled:
+            while (self.curr_vicon is None):
+                rospy.loginfo("waiting for valid current vicon")
+                self.set_position(takeoff_target)
+                rate.sleep()
 
         #self.vicon_odom_transform =\
         #    vicon_transforms.get_vicon_to_odom_transform(\
@@ -301,7 +358,15 @@ class CommNode:
         print(self.curr_pose)
         self.curr_waypoint = self.waypoint_pop()
         while(not rospy.is_shutdown()):
-            if self.curr_waypoint is None or self.is_close(self.curr_waypoint, self.curr_pose) or self.is_close(self.goal_pose, self.curr_pose): #last check should be redundant but better safe than sorry
+            if self.vicon_enabled:
+                pose_to_compare = Pose()
+                pose_to_compare.position.x = self.curr_vicon.transform.translation.x
+                pose_to_compare.position.y = self.curr_vicon.transform.translation.y
+                pose_to_compare.position.z = self.curr_vicon.transform.translation.z
+                
+            else:
+                pose_to_compare = self.curr_pose
+            if self.curr_waypoint is None or self.is_close(self.curr_waypoint, pose_to_compare) or self.is_close(self.goal_pose, pose_to_compare): #last check should be redundant but better safe than sorry
                 if len(self.waypoints) > 0:
                     # print("current waypoint reached at : ", self.curr_waypoint.position.x, self.curr_waypoint.position.y, self.curr_waypoint.position.z)
                     self.curr_waypoint = self.waypoint_pop()
@@ -309,18 +374,15 @@ class CommNode:
                     
             self.set_position(self.curr_waypoint)
             print("curr pose in local: ", self.curr_pose.position.x, self.curr_pose.position.y, self.curr_pose.position.z)
-            print("curr pose in vicon: ", self.curr_vicon.transform.translation.x, self.curr_vicon.transform.translation.y, self.curr_vicon.transform.translation.z)
-            #print("target pose in local: ", self.curr_waypoint.position.x, self.curr_waypoint.position.y, self.curr_waypoint.position.z)
+            if self.vicon_enabled:
+                print("curr pose in vicon: ", self.curr_vicon.transform.translation.x, self.curr_vicon.transform.translation.y, self.curr_vicon.transform.translation.z)
             curr_pose_stamped = PoseStamped()
             curr_pose_stamped.pose = self.curr_pose
-            self.vicon_odom_transform =\
-                vicon_transforms.get_vicon_to_odom_transform(\
-                    self.curr_vicon, curr_pose_stamped)
-
-            waypoint_transformed = vicon_transforms.transform_vicon_pose(self.vicon_odom_transform, self.curr_waypoint)
-            
-            print("target pose in vicon: ", self.curr_waypoint.position.x, self.curr_waypoint.position.y, self.curr_waypoint.position.z)
-            print("target pose in local: ", waypoint_transformed.position.x, waypoint_transformed.position.y, waypoint_transformed.position.z)
+            if self.vicon_enabled:
+                print("target pose in vicon: ", self.curr_waypoint.position.x, self.curr_waypoint.position.y, self.curr_waypoint.position.z)
+            else:
+                print("target pose in local: ", self.curr_waypoint.position.x, self.curr_waypoint.position.y, self.curr_waypoint.position.z)
+        
             rate.sleep()
 
         
