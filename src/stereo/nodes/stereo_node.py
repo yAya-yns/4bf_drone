@@ -27,7 +27,8 @@ Q = None
 
 H,W = 800,848
 IMG_SIZE_WH = (W,H)
-DOWNSCALE_H = 8
+DOWNSCALE_H = 4
+DOWNSCALE_W = 2
 STEREO_SIZE_WH = (W, H//DOWNSCALE_H)
 BASELINE = 0.064
 
@@ -54,10 +55,16 @@ def stereo_cb(msg1, msg2):
         (orig_height - new_height) // 2 : (orig_height + new_height) // 2, :
     ]
 
+    #crop to right side of image:
+    #img_crop1 = img_crop1[:, W/DOWNSCALE_W:]
+    #img_crop2 = img_crop2[:, W/DOWNSCALE_W:]
+
     # compute disparity, divide by DISP_SCALE, not sure what that means
-    disparity = STEREO_BM.compute(img_crop1, img_crop2).astype(np.float32) / 16.0
+    disparity = STEREO_BM.compute(img_crop1, img_crop2).astype(np.float32) / 48.0
     if VISUALIZE:
         visualize_disparity(img_crop1, disparity)
+
+    disparity = disparity[:,100:]
 
     # # convert to disparity image message (untested)
     disp_msg = DisparityImage()
@@ -66,7 +73,7 @@ def stereo_cb(msg1, msg2):
     disp_msg.f = 1.0
     disp_msg.T = BASELINE
     disp_msg.min_disparity = 0.0  # see minDisparity in stereo_bm
-    disp_msg.max_disparity = 16  # see num_disparities in stereo_bm
+    disp_msg.max_disparity = 48  # see num_disparities in stereo_bm
     disp_msg.delta_d = 1.0  # see disp12MaxDiff in stereo_bm
 
     # # publish disparity image
@@ -133,8 +140,8 @@ def visualize_disparity(img_crop1, disparity):
 def main():
     global STEREO_PUB, STEREO_BM
     rospy.init_node("stereo_node")
-    num_disparities = rospy.get_param("~num_disparities", 16)
-    block_size = rospy.get_param("~block_size", 15)
+    num_disparities = rospy.get_param("~num_disparities", 48)
+    block_size = rospy.get_param("~block_size", 33)
     STEREO_BM = cv2.StereoBM_create(
         numDisparities=num_disparities, blockSize=block_size
     )

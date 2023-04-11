@@ -17,8 +17,8 @@ class DetNode:
         self.window_ = False
         self.counter_ = 0
         self.counter_threshold_ = 5
-        self.distance_threshold_ = 1.0
-        self.pixels_to_check_ = 50
+        self.inverse_disparity_threshold_ = 100.0
+        self.pixels_to_check_ = 250
         self.cv_bridge_ = CvBridge()
 
         # Pubs, Subs and Timers
@@ -51,16 +51,6 @@ class DetNode:
         opencv_image = \
             self.cv_bridge_.imgmsg_to_cv2(self.disparity_image_.image, \
                                           desired_encoding='passthrough')
-        
-        cv2.imshow('image',opencv_image)
-        cv2.waitKey(1)
-
-        
-
-        #print(opencv_image)
-
-        dummpy = np.array([(1, 2), \
-                           (4, 3)])
 
         max_indexes = np.unravel_index(np.argsort(-opencv_image, axis=None),\
                                        opencv_image.shape)
@@ -74,8 +64,7 @@ class DetNode:
         if (avg_max_disp < 0):
             return -1.0
 
-        avg_distance = \
-            self.disparity_image_.f *self.disparity_image_.T / avg_max_disp
+        avg_distance = 1000 / avg_max_disp
         
         avg_y = np.average(max_y)
 
@@ -86,7 +75,7 @@ class DetNode:
         print(np.average(max_y))
 
         #print(opencv_image.shape)
-        if avg_distance < self.distance_threshold_:
+        if avg_distance < self.inverse_disparity_threshold_:
           if self.window_ == True:
               self.counter_ += 1
 
