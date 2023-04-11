@@ -24,7 +24,7 @@ class DetNode:
         # Pubs, Subs and Timers
         self.od_pub_ = rospy.Publisher("/det/inview", \
             Float64, queue_size=10)
-        self.local_pose_sub_ = rospy.Subscriber("/stereo/disparity", \
+        self.local_pose_sub_ = rospy.Subscriber("/stereo/image_raw", \
             DisparityImage, callback = self.disparity_cb)
         self.timer_ = rospy.Timer(rospy.Duration(0.1), self.timer_cb)
 
