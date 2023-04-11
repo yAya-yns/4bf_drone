@@ -29,9 +29,10 @@ def dist(p1, p2):
 def direct(p1, p2):
     # going 1 --> 2
     # unit vector pointing to p2 from p1
-    p1 = np.array([p1.x, p1.y, p1.z])
-    p2 = np.array([p2.x, p2.y, p2.z])
+    p1 = np.array([p1.x, p1.y])
+    p2 = np.array([p2.x, p2.y])
     d = p2 - p1
+    self.curr_dir = d/np.linalg.norm(d)
     return d/np.linalg.norm(d)
 
 class CommNode:
@@ -83,6 +84,7 @@ class CommNode:
         self.curr_waypoint = None
         self.curr_pose = None
         self.curr_dir = None
+        self.curr_quat = None
 
         # Transform stuff
         self.curr_vicon = None
@@ -120,12 +122,32 @@ class CommNode:
         # in 1m box maybe?
         self.lock.acquire()
         curr = self.curr_pose
+        orth = np.array([self.curr_dir[1], -self.curr_dir[0]]) * self.box_size
+        dir_vec = self.curr_dir * self.box_size
 
-        xy_p = np.array([curr.position.x + 1.5, curr.position.y + 1.5, curr.position.z])
-        xy_m = np.array([curr.position.x - 1.5, curr.position.y - 1.5, curr.posiiton.z])
+        xy_p = np.array([curr.position.x + orth[0], curr.position.y + orth[1], curr.position.z])
+        xy_m = np.array([curr.position.x - orth[0], curr.position.y - orth[1], curr.posiiton.z])
 
-        if 
-            point1 = get_pose(curr.position.x + 1.5, )
+        if np.linalg.norm(xy_p) > np.linalg.norm(xy_m):
+            # out horizontally
+            point1 = get_pose(xy_m[0], xy_m[1], xy_m[2], self.quat[0], self.quat[1], self.quat[2], self.quat[3])
+            # out and front
+            point2 = get_pose(point1.position.x + dir_vec[0], point1.position.y + dir_vec[1], curr.position.z, self.quat[0], self.quat[1], self.quat[2], self.quat[3])   
+            # center and front
+            point3 = get_pose(point2.position.x + orth[0], point2.position.y + orth[1], curr.position.z, self.quat[0], self.quat[1], self.quat[2], self.quat[3])
+        
+        else:
+            # out horizontally
+            point1 = get_pose(xy_p[0], xy_p[1], xy_p[2], self.quat[0], self.quat[1], self.quat[2], self.quat[3])
+            # out and front
+            point2 = get_pose(point1.position.x - dir_vec[0], point1.position.y - dir_vec[1], curr.position.z, self.quat[0], self.quat[1], self.quat[2], self.quat[3])
+            # center and front
+            point3 = get_pose(point2.position.x - orth[0], point2.position.y - orth[1], curr.position.z, self.quat[0], self.quat[1], self.quat[2], self.quat[3])
+
+        # reverse order bc last in first out when pushing to front
+        self.push_waypoint_front(point3)
+        self.push_waypoint_front(point2)
+        self.push_waypoint_front(point1)
 
         self.lock.release()
         return
@@ -142,8 +164,9 @@ class CommNode:
         turn_point = get_pose(curr.position.x, curr.position.y, self.goal_height, quat[0], quat[1], quat[2], quat[3])
         
         self.push_waypoint_front(turn_point)
+        self.quat = quat
         self.lock.release()
-        return quat
+        return
     
     def create_wiggle(self, new_goal):
         ''' add new goal and also wiggle in place to try to hit waypoint 
@@ -319,6 +342,7 @@ class CommNode:
             self.obstacle_detected = False
         else: 
             self.obs_y = obs
+            self.obstacle_detected = True
         return EmptyResponse()
     
     def callback_vicon(self, vicon):
@@ -401,6 +425,7 @@ class CommNode:
         self.curr_waypoint = self.waypoint_pop()
         self.state_machine = 2
         self.state_machine_counter = 0
+        self.obs_avoid_counter = 0
         while(not rospy.is_shutdown()):
             if self.vicon_enabled:
                 pose_to_compare = Pose()
@@ -410,14 +435,18 @@ class CommNode:
                 
             else:
                 pose_to_compare = self.curr_pose
+
+            # if obstacle detected, do obstaclle avoidance and self.pause is true. Only after obstacle avoidance is done, self.pause false and continue on way
+            if self.obstacle_detected:
+                self.pause = True
+                # do generation
+                self.gen_avoidance()
+                self.obs_avoid_counter = 0
+                
             if self.curr_waypoint is None or self.is_close(self.curr_waypoint, pose_to_compare): #last check should be redundant but better safe than sorry
                 if len(self.waypoints) > 0:
                     # print("current waypoint reached at : ", self.curr_waypoint.position.x, self.curr_waypoint.position.y, self.curr_waypoint.position.z)
-                    # if obstacle detected, do obstaclle avoidance and self.pause is true. Only after obstacle avoidance is done, self.pause false and continue on way
-                    # if self.obstacle_detected:
-                    #     self.pause = True
-                    #     # do generation
-                    #     self.gen_avoidance()
+                    
                     if not self.pause:
                         # if isturn = FALSE gen turn push to self.waypoints and set isturn = TRUE
                         # else: isturn = FALSE 
@@ -449,7 +478,26 @@ class CommNode:
                                 self.state_machine_counter += 1
                                 
                             self.curr_waypoint = self.waypoint_pop()
-                        
+
+                        print("new waypoint : ", self.curr_waypoint.position.x, self.curr_waypoint.position.y, self.curr_waypoint.position.z)
+
+                    if self.pause:
+                        print("===============PAUSED=============")
+                        # check that the avoidance waypoints have been reached
+                        if self.obs_avoid_counter < 3:
+                            print("===============%i/3 AVOID DONE=============", %self.obs_avoid_counter)
+                            # pop 3 obstacle avoidance waypoints
+                            self.curr_waypoint = self.waypoint_pop()
+                            self.obs_avoid_counter += 1
+                        else:
+                            # reset variables and continue on path
+                            print("===============AVOIDANCE DONE=============")
+                            self.obs_avoid_counter = 0
+                            self.pause = False
+                            self.obstacle_detected = False
+
+                            # and then pop next path waypoint
+                            self.curr_waypoint = self.waypoint_pop()
                         
                         print("new waypoint : ", self.curr_waypoint.position.x, self.curr_waypoint.position.y, self.curr_waypoint.position.z)
                     
