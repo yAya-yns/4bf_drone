@@ -4,6 +4,7 @@ import tf
 import geometry_msgs
 from std_srvs.srv import Empty, EmptyResponse
 from geometry_msgs.msg import Pose, PoseStamped, PoseArray, TransformStamped
+from std_msgs.msg import Float64
 from mavros_msgs.msg import State
 from mavros_msgs.srv import CommandBool, CommandBoolRequest, SetMode, SetModeRequest
 import numpy as np
@@ -56,6 +57,7 @@ class CommNode:
         # Pubs, Subs and Transforms
         self.setpoint_pub_ = rospy.Publisher("/mavros/setpoint_position/local", PoseStamped, queue_size=10)
         self.local_pose_sub = rospy.Subscriber("/mavros/local_position/pose", PoseStamped, callback = self.callback_pose)
+        # self.obstacle_sub = rospy.Subscriber("---obst topic bool ---", Float64, callback = self.callback_obs)
         
         self.state_sub = rospy.Subscriber("/mavros/state", State, callback = self.state_cb)
         self.vicon_sub = rospy.Subscriber("/vicon/ROB498_Drone/ROB498_Drone", TransformStamped, callback = self.callback_vicon)
@@ -73,12 +75,14 @@ class CommNode:
 
         self.sub_dist = 0.20 #dist between each waypoint?
         self.dist_tolerance = 0.10 #tolerance before moving to next waypoint
+        self.ang_tolerance = 0.17 #0.17 #tolerance of radian before moving to next
         self.waypoints = [] # collection of pose
         self.waypoints_arr = np.empty((0,3))
         self.waypoints_posearray = PoseArray()
         self.waypoints_recived = False
         self.curr_waypoint = None
         self.curr_pose = None
+        self.curr_dir = None
 
         # Transform stuff
         self.curr_vicon = None
@@ -91,6 +95,10 @@ class CommNode:
         self.active = False
 
         self.pause = False
+        self.obstacle_detected = False
+        self.obs_y = None
+        self.img_width = 848
+        self.box_size = 1.5
     
 
     def state_cb(self, msg):
@@ -102,21 +110,40 @@ class CommNode:
     def is_close(self, pose1, pose2):
         p1 = pose1.position
         p2 = pose2.position
-        return dist(p1, p2) < self.dist_tolerance
+        ang1 = tf.transformations.euler_from_quaternion((pose1.orientation.x, pose1.orientation.y, pose1.orientation.z, pose1.orientation.w))
+        ang2 = tf.transformations.euler_from_quaternion((pose2.orientation.x, pose2.orientation.y, pose2.orientation.z, pose2.orientation.w))
 
-    def create_turn_point(self):
+        return dist(p1, p2) < self.dist_tolerance and abs(ang1[2] - ang2[2]) < self.ang_tolerance
+    
+    def gen_avoidance(self):
+        # generate waypoints in a box around the obstacle
+        # in 1m box maybe?
         self.lock.acquire()
         curr = self.curr_pose
-        next_point = self.waypoints[-1]
+
+        xy_p = np.array([curr.position.x + 1.5, curr.position.y + 1.5, curr.position.z])
+        xy_m = np.array([curr.position.x - 1.5, curr.position.y - 1.5, curr.posiiton.z])
+
+        if 
+            point1 = get_pose(curr.position.x + 1.5, )
+
+        self.lock.release()
+        return
+
+    def create_turn_point(self, new_goal):
+        self.lock.acquire()
+        curr = self.curr_pose
+        next_point = new_goal
 
         dir_vec = direct(curr.position, next_point.position)
         angle = np.arctan2([dir_vec[1]], [dir_vec[0]])
         quat = tf.transformations.quaternion_from_euler(0, 0, angle[0]) 
-        turn_point = get_pose(curr.position.x, curr.position.y, curr.position.z, quat[0], quat[1], quat[2], quat[3])
+        # turn_point = get_pose(curr.position.x, curr.position.y, curr.position.z, quat[0], quat[1], quat[2], quat[3])
+        turn_point = get_pose(curr.position.x, curr.position.y, self.goal_height, quat[0], quat[1], quat[2], quat[3])
         
         self.push_waypoint_front(turn_point)
         self.lock.release()
-        return
+        return quat
     
     def create_wiggle(self, new_goal):
         ''' add new goal and also wiggle in place to try to hit waypoint 
@@ -128,17 +155,17 @@ class CommNode:
         dist = 0.25
         curr = self.curr_pose
 
-        safe_point = get_pose(new_goal.position.x, new_goal.position.y, self.goal_height, curr.orientation.x, curr.orientation.y, curr.orientation.z, curr.orientation.w) 
+        # safe_point = get_pose(new_goal.position.x, new_goal.position.y, self.goal_height, curr.orientation.x, curr.orientation.y, curr.orientation.z, curr.orientation.w) 
 
-        # self.waypoints.append(new_goal)
-        self.waypoints.append(safe_point)
+        # # self.waypoints.append(new_goal)
+        # # self.waypoints.append(safe_point)
 
         for x in range(-1, 1, 1):
             for y in range(-1, 1, 1):
                 # TODO uncomment this for real. rn test with set z position
                 new = get_pose(new_goal.position.x + x*dist, new_goal.position.y + y*dist, new_goal.position.z + x*dist, curr.orientation.x, curr.orientation.y, curr.orientation.z, curr.orientation.w)
                 # new = get_pose(new_goal.position.x + x*dist, new_goal.position.y + y*dist, self.goal_height)
-                self.waypoints.append(new)
+                self.push_waypoint_front(new)
 
         print("finished. \nWAYPOINTS: ", self.waypoints)
         self.lock.release()
@@ -148,17 +175,17 @@ class CommNode:
         ''' add new goal to the front of the queue
         new_goal: Pose()
         '''
-        self.lock.acquire()
+        #self.lock.acquire()
         print('generating new front point...')
 
-        safe_point = get_pose(new_goal.position.x, new_goal.position.y, self.goal_height) 
+        safe_point = get_pose(new_goal.position.x, new_goal.position.y, self.goal_height, new_goal.orientation.x, new_goal.orientation.y, new_goal.orientation.z, new_goal.orientation.w) 
 
         new = [new_goal]
         # new = [safe_point]
         self.waypoints = new + self.waypoints
 
         print("finished. \nWAYPOINTS: ", self.waypoints)
-        self.lock.release()
+        #self.lock.release()
         return
 
     def callback_waypoints(self, msg):
@@ -173,7 +200,7 @@ class CommNode:
 
         print("-------------------------")
         print("-------------------------")
-        print("-----WAYPOINT RECIEVED---")
+        print("----WAYPOINT RECIEVED----")
         print("=========================")
 
     
@@ -196,10 +223,21 @@ class CommNode:
         self.waypoints.append(get_pose(0, 0, self.goal_height))
 
         new = get_pose(1.0, 1.0, self.goal_height)
-        self.push_waypoint_front(new)
-        self.create_wiggle(new)
+        self.waypoints.append(new)
+
         new = get_pose(0.0, 0.0, self.goal_height)
-        self.create_wiggle(new)
+        self.waypoints.append(new)
+
+        #############################
+
+        # new = get_pose(1.0, 1.0, self.goal_height)
+        # new_ang = self.create_turn_point(new, get_pose(0, 0, self.goal_height))
+        # new = get_pose(1.0, 1.0, self.goal_height, new_ang[0], new_ang[1], new_ang[2], new_ang[3])
+        # self.create_wiggle(new)
+
+        # new = get_pose(0.0, 0.0, self.goal_height)
+        # new_ang = self.create_turn_point(new, self.waypoints[-1])
+        # self.create_wiggle(new, self.waypoints[-1])
 
         # self.goal_pose = get_pose(0.0, 0.0, self.goal_height)
         # self.create_waypoints(self.goal_pose)
@@ -219,7 +257,8 @@ class CommNode:
             return EmptyResponse()
         else:
             for pose in self.waypoints_posearray.poses:
-                self.create_wiggle(pose)
+                # self.create_wiggle(pose)
+                self.waypoints.append(pose)
 
         if len(self.waypoints) == self.waypoints_arr.shape[0] * 5:
             print('waypoint creation success')
@@ -273,6 +312,13 @@ class CommNode:
     
     def callback_pose(self, pose):
         self.curr_pose = pose.pose
+        return EmptyResponse()
+    
+    def callback_obs(self, obs):
+        if obs == -1:
+            self.obstacle_detected = False
+        else: 
+            self.obs_y = obs
         return EmptyResponse()
     
     def callback_vicon(self, vicon):
@@ -353,6 +399,8 @@ class CommNode:
 
         print(self.curr_pose)
         self.curr_waypoint = self.waypoint_pop()
+        self.state_machine = 2
+        self.state_machine_counter = 0
         while(not rospy.is_shutdown()):
             if self.vicon_enabled:
                 pose_to_compare = Pose()
@@ -362,26 +410,67 @@ class CommNode:
                 
             else:
                 pose_to_compare = self.curr_pose
-            if self.curr_waypoint is None or self.is_close(self.curr_waypoint, pose_to_compare) or self.is_close(self.goal_pose, pose_to_compare): #last check should be redundant but better safe than sorry
+            if self.curr_waypoint is None or self.is_close(self.curr_waypoint, pose_to_compare): #last check should be redundant but better safe than sorry
                 if len(self.waypoints) > 0:
                     # print("current waypoint reached at : ", self.curr_waypoint.position.x, self.curr_waypoint.position.y, self.curr_waypoint.position.z)
+                    # if obstacle detected, do obstaclle avoidance and self.pause is true. Only after obstacle avoidance is done, self.pause false and continue on way
+                    # if self.obstacle_detected:
+                    #     self.pause = True
+                    #     # do generation
+                    #     self.gen_avoidance()
                     if not self.pause:
-                        self.curr_waypoint = self.waypoint_pop()
+                        # if isturn = FALSE gen turn push to self.waypoints and set isturn = TRUE
+                        # else: isturn = FALSE 
+                        if (self.state_machine == 1): #final wigglepoint hit
+                            print("===============WIGGLEPOINTs FINISHED=============")
+                            self.create_turn_point(self.waypoints[-1])
+                            self.state_machine = 2
+
+                            self.curr_waypoint = self.waypoint_pop()
+
+                        elif (self.state_machine == 2): #turnpoint finished
+                            print("===============TURNPOINT HIT=============")
+                            curr_quat = self.curr_waypoint.orientation
+                            self.curr_waypoint = self.waypoint_pop()
+                            self.curr_waypoint.orientation = curr_quat
+                            self.state_machine = 3
+                            
+                        elif (self.state_machine == 3): #waypoint hit / in the middle of wigglepoints
+                            if self.state_machine_counter == 0: # waypoint hit : create wigglepoints
+                                print("===============WAYPOINT HIT=============")
+                                self.create_wiggle(self.curr_waypoint)
+                                self.state_machine_counter += 1
+                            elif self.state_machine_counter == 3: # final wigglepoint hit
+                                print("===============3/4 WIGGLE DONE=============")
+                                self.state_machine = 1
+                                self.state_machine_counter = 0
+                            else:
+                                print("===============" + str(self.state_machine_counter) + "/4 WIGGLE DONE=============")
+                                self.state_machine_counter += 1
+                                
+                            self.curr_waypoint = self.waypoint_pop()
+                        
+                        
                         print("new waypoint : ", self.curr_waypoint.position.x, self.curr_waypoint.position.y, self.curr_waypoint.position.z)
                     
             self.set_position(self.curr_waypoint)
-            print("curr pose in local: ", self.curr_pose.position.x, self.curr_pose.position.y, self.curr_pose.position.z)
-            eul = tf.transformations.euler_from_quaternion((self.curr_pose.orientation.x, self.curr_pose.orientation.y, self.curr_pose.orientation.z, self.curr_pose.orientation.w))
-            print("curr orientation in locaL: ", eul)
+            print("CURR pose in local: ", round(self.curr_pose.position.x, 3), round(self.curr_pose.position.y, 3), round(self.curr_pose.position.z, 3))
+            eul = np.round(tf.transformations.euler_from_quaternion((self.curr_pose.orientation.x, self.curr_pose.orientation.y, self.curr_pose.orientation.z, self.curr_pose.orientation.w)), 3)
+            print("CURR orientation in locaL: ", eul[0], eul[1], eul[2])
             if self.vicon_enabled:
-                print("curr pose in vicon: ", self.curr_vicon.transform.translation.x, self.curr_vicon.transform.translation.y, self.curr_vicon.transform.translation.z)
+                print("CURR pose in vicon: ", self.curr_vicon.transform.translation.x, self.curr_vicon.transform.translation.y, self.curr_vicon.transform.translation.z)
+            print(" ")
             curr_pose_stamped = PoseStamped()
             curr_pose_stamped.pose = self.curr_pose
             if self.vicon_enabled:
-                print("target pose in vicon: ", self.curr_waypoint.position.x, self.curr_waypoint.position.y, self.curr_waypoint.position.z)
+                print("TARGET pose in vicon: ", self.curr_waypoint.position.x, self.curr_waypoint.position.y, self.curr_waypoint.position.z)
             else:
-                print("target pose in local: ", self.curr_waypoint.position.x, self.curr_waypoint.position.y, self.curr_waypoint.position.z)
-        
+                print("TARGET pose in local: ", round(self.curr_waypoint.position.x, 3), round(self.curr_waypoint.position.y, 3), round(self.curr_waypoint.position.z, 3))
+                print("TARGET orientation in local: ", round(self.curr_waypoint.orientation.x, 3), round(self.curr_waypoint.orientation.y, 3), round(self.curr_waypoint.orientation.z, 3), round(self.curr_waypoint.orientation.w, 3))
+
+            print(" ")
+            print(" ")
+
             rate.sleep()
 
         
