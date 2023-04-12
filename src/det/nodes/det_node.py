@@ -21,6 +21,7 @@ class DetNode:
         self.num_disparities_ = 48
         self.block_size_ = 33
         self.visualize_ = True
+        self.verbose_ = False
 
         # Initialize variables:
         self.disparity_image_ = None
@@ -125,8 +126,8 @@ class DetNode:
         else:
             self.generateDisparity()
             msg.data = self.processDisparity()
-
-        print(msg)
+        if self.verbose_:
+            print(msg)
         self.od_pub_.publish(msg)  
 
         return
@@ -181,11 +182,12 @@ class DetNode:
         
         avg_y = np.average(max_y)
 
-        print("closest distance:")
-        print(avg_distance)
+        if self.verbose_:
+            print("closest distance:")
+            print(avg_distance)
 
-        print("y loc:")
-        print(np.average(max_y))
+            print("y loc:")
+            print(np.average(max_y))
 
         #print(opencv_image.shape)
         if avg_distance < self.inverse_disparity_threshold_:
