@@ -6,3 +6,4 @@ logs/
 .catkin_tools
 PX4-Autopilot/
 src/rgb_camera/rgb_output/
+perception/*.avi
