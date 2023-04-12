@@ -4,7 +4,7 @@ import cv2
 import numpy as np
 import threading
 from std_msgs.msg import Float64
-from stereo_msgs.msg import DisparityImage
+from sensor_msgs.msg import Image, CameraInfo
 from cv_bridge import CvBridge
 
 class DetNode:
@@ -12,41 +12,145 @@ class DetNode:
         print('starting od')
         rospy.init_node("det_node")
 
-        # Initialize variables:
-        self.disparity_image_ = None
-        self.window_ = False
-        self.counter_ = 0
+        # Configurable params:
         self.counter_threshold_ = 5
         self.inverse_disparity_threshold_ = 100.0
         self.pixels_to_check_ = 250
+        self.downscale_factor_ = 4
+
+        self.num_disparities_ = 48
+        self.block_size_ = 33
+
+        # Initialize variables:
+        self.disparity_image_ = None
+        self.img_1_ = None
+        self.img_2_ = None
+        self.img_1_info_ = None
+        self.img_2_info_ = None
+        self.cam_1_map_y_ = None
+        self.cam_1_map_x_ = None
+        self.cam_2_map_y_ = None
+        self.cam_2_map_x_ = None
+        self.window_ = False
+        self.counter_ = 0
+        self.baseline_ = 0.064
+        self.img_size_ = (800,848)
         self.cv_bridge_ = CvBridge()
+        self.stereo_bm_ = cv2.StereoBM_create(
+            numDisparities=self.num_disparities_, blockSize=self.block_size_)
 
         # Pubs, Subs and Timers
+        rospy.Subscriber("/camera/fisheye1/image_raw", Image, \
+                         self.cam_1_cb)
+        rospy.Subscriber("/camera/fisheye1/camera_info", CameraInfo, \
+                         self.cam_1_info_cb)
+        rospy.Subscriber("/camera/fisheye2/image_raw", Image, \
+                         self.cam_2_cb)
+        rospy.Subscriber("/camera/fisheye2/camera_info", CameraInfo, \
+                         self.cam_1_info_cb)
+        
         self.od_pub_ = rospy.Publisher("/det/inview", \
             Float64, queue_size=10)
-        self.local_pose_sub_ = rospy.Subscriber("/stereo/image_raw", \
-            DisparityImage, callback = self.disparity_cb)
         self.timer_ = rospy.Timer(rospy.Duration(0.1), self.timer_cb)
 
-    def disparity_cb(self, msg):
-        self.disparity_image_ = msg
+    def cam_1_cb(self, msg):
+      if self.img_1_info_ == None:
         return
+      img_distorted = self.cv_bridge_.imgmsg_to_cv2(msg, desired_encoding="passthrough")
+      img_undistorted = cv2.remap(
+          img_distorted,
+          self.cam_1_map_x_,
+          self.cam_1_map_y_,
+          interpolation=cv2.INTER_LINEAR,
+          borderMode=cv2.BORDER_CONSTANT,
+      )
+      # crop top and bottom based on DOWNSCALE_H
+      orig_height = img_undistorted.shape[0]
+      new_height = orig_height//self.downscale_factor_
+      # take center of image of new height
+      img_undistorted = img_undistorted[
+          (orig_height - new_height)//2 : (orig_height + new_height)//2, :
+      ]
+      # convert from mono8 to bgr8
+      self.img_1_ = cv2.cvtColor(img_undistorted, cv2.COLOR_GRAY2BGR)
+        
+
+    def cam_2_cb(self, msg):
+      if self.img_2_info_ == None:
+        return
+      img_distorted = self.cv_bridge_.imgmsg_to_cv2(msg, desired_encoding="passthrough")
+      img_undistorted = cv2.remap(
+          img_distorted,
+          self.cam_2_map_x_,
+          self.cam_2_map_y_,
+          interpolation=cv2.INTER_LINEAR,
+          borderMode=cv2.BORDER_CONSTANT,
+      )
+      # crop top and bottom based on DOWNSCALE_H
+      orig_height = img_undistorted.shape[0]
+      new_height = orig_height//self.downscale_factor_
+      # take center of image of new height
+      img_undistorted = img_undistorted[
+          (orig_height - new_height)//2 : (orig_height + new_height)//2, :
+      ]
+      # convert from mono8 to bgr8
+      self.img_2_ = cv2.cvtColor(img_undistorted, cv2.COLOR_GRAY2BGR)
+        
+
+    def cam_1_info_cb(self, msg):
+        if self.cam_1_info_ == None:
+            self.cam_1_info_ = msg
+            self.cam_2_map_x_, self.cam_2_map_y_ = \
+                self.generateMap(self.cam_1_info_)
+
+    def cam_2_info_cb(self, msg):
+        if self.cam_2_info_ == None:
+            self.cam_2_info_ = msg
+            self.cam_2_map_x_, self.cam_2_map_y_ = \
+                self.generateMap(self.cam_2_info_)
 
     def timer_cb(self, event):
         msg = Float64()
         msg.data = -1.0
         
-        if self.disparity_image_ == None:
-            print("det_node::timer_cb: Dispairty image not yet recieved")
+        if (self.img_1_info_ != None and self.img_2_info_ != None) and \
+            (self.img_1_map_x_ == None and self.img_2_map_y_ == None):
+            self.generateMap()
+
+        if self.img_2_ == None or self.img_1_ == None:
+            print("det_node::timer_cb: image pair not yet ready")
             
         else:
+            self.generateDisparity()
             msg.data = self.processDisparity()
 
         print(msg)
         self.od_pub_.publish(msg)  
 
         return
-        
+    
+    def generateMap(self):
+      k1 = np.array(self.cam_1_info_.K).reshape(3,3)
+      d1 = np.array(self.cam_1_info_.D)
+      k2 = np.array(self.cam_2_info_.K).reshape(3,3)
+      d2 = np.array(self.cam_2_info_.D)
+      T = np.array([self.baseline_, 0, 0]) # 64 mm baseline
+
+      R1, R2, P1, P2, Q, roi1, roi2 = cv2.stereoRectify(\
+          k1, d1, k2, d2, self.img_size_, R=np.eye(3), T=T)
+       
+      self.cam_1_map_x_, self.cam_1_map_y_ = \
+          cv2.fisheye.initUndistortRectifyMap(\
+              k1, d1, R1, P1, size=self.img_size_, m1type=cv2.CV_32FC1)
+      
+      self.cam_2_map_x_, self.cam_2_map_y_ = \
+          cv2.fisheye.initUndistortRectifyMap(\
+              k2, d2, R2, P2, size=self.img_size_, m1type=cv2.CV_32FC1) 
+
+    def generateDisparity(self):
+       self.disparity_image_ = self.stereo_bm_.compute(\
+            self.img_1_, self.img_2_).astype(np.float32) / self.num_disparities_
+
     def processDisparity(self):
         opencv_image = \
             self.cv_bridge_.imgmsg_to_cv2(self.disparity_image_.image, \

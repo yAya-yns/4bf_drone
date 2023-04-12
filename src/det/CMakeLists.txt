@@ -12,11 +12,11 @@ find_package(catkin REQUIRED COMPONENTS
   std_msgs
   geometry_msgs
   nav_msgs
-  stereo_msgs
+  sensor_msgs
 )
 
 catkin_package(
-  CATKIN_DEPENDS rospy std_msgs geometry_msgs nav_msgs stereo_msgs
+  CATKIN_DEPENDS rospy std_msgs geometry_msgs nav_msgs sensor_msgs
 )
 
 ################################################################################
