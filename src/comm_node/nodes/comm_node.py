@@ -26,15 +26,6 @@ def dist(p1, p2):
     # both are pose.position
     return np.linalg.norm((np.array([p1.x, p1.y, p1.z]) - np.array([p2.x, p2.y, p2.z])))
 
-def direct(p1, p2):
-    # going 1 --> 2
-    # unit vector pointing to p2 from p1
-    p1 = np.array([p1.x, p1.y])
-    p2 = np.array([p2.x, p2.y])
-    d = p2 - p1
-    self.curr_dir = d/np.linalg.norm(d)
-    return d/np.linalg.norm(d)
-
 class CommNode:
     def __init__(self):
         print('This is a dummy drone node to test communication with the ground control')
@@ -83,8 +74,8 @@ class CommNode:
         self.waypoints_recived = False
         self.curr_waypoint = None
         self.curr_pose = None
-        self.curr_dir = None
-        self.curr_quat = None
+        self.curr_dir = np.array([1, 0])
+        self.curr_quat = np.array([0, 0, 0, 1])
 
         # Transform stuff
         self.curr_vicon = None
@@ -100,7 +91,16 @@ class CommNode:
         self.obstacle_detected = False
         self.obs_y = None
         self.img_width = 848
-        self.box_size = 1.5
+        self.box_size = 0.5
+
+    def direct(self, p1, p2):
+        # going 1 --> 2
+        # unit vector pointing to p2 from p1
+        p1 = np.array([p1.x, p1.y])
+        p2 = np.array([p2.x, p2.y])
+        d = p2 - p1
+        self.curr_dir = d/np.linalg.norm(d)
+        return d/np.linalg.norm(d)
     
 
     def state_cb(self, msg):
@@ -120,29 +120,32 @@ class CommNode:
     def gen_avoidance(self):
         # generate waypoints in a box around the obstacle
         # in 1m box maybe?
+        print('000000000000000 GENERATING AVOIDANCE 000000000000000')
         self.lock.acquire()
         curr = self.curr_pose
         orth = np.array([self.curr_dir[1], -self.curr_dir[0]]) * self.box_size
         dir_vec = self.curr_dir * self.box_size
 
         xy_p = np.array([curr.position.x + orth[0], curr.position.y + orth[1], curr.position.z])
-        xy_m = np.array([curr.position.x - orth[0], curr.position.y - orth[1], curr.posiiton.z])
+        xy_m = np.array([curr.position.x - orth[0], curr.position.y - orth[1], curr.position.z])
 
         if np.linalg.norm(xy_p) > np.linalg.norm(xy_m):
             # out horizontally
-            point1 = get_pose(xy_m[0], xy_m[1], xy_m[2], self.quat[0], self.quat[1], self.quat[2], self.quat[3])
+            print("generating in left")
+            point1 = get_pose(xy_m[0], xy_m[1], xy_m[2], self.curr_quat[0], self.curr_quat[1], self.curr_quat[2], self.curr_quat[3])
             # out and front
-            point2 = get_pose(point1.position.x + dir_vec[0], point1.position.y + dir_vec[1], curr.position.z, self.quat[0], self.quat[1], self.quat[2], self.quat[3])   
+            point2 = get_pose(point1.position.x + dir_vec[0], point1.position.y + dir_vec[1], curr.position.z, self.curr_quat[0], self.curr_quat[1], self.curr_quat[2], self.curr_quat[3])   
             # center and front
-            point3 = get_pose(point2.position.x + orth[0], point2.position.y + orth[1], curr.position.z, self.quat[0], self.quat[1], self.quat[2], self.quat[3])
+            point3 = get_pose(point2.position.x + orth[0], point2.position.y + orth[1], curr.position.z, self.curr_quat[0], self.curr_quat[1], self.curr_quat[2], self.curr_quat[3])
         
         else:
+            print("generating in right")
             # out horizontally
-            point1 = get_pose(xy_p[0], xy_p[1], xy_p[2], self.quat[0], self.quat[1], self.quat[2], self.quat[3])
+            point1 = get_pose(xy_p[0], xy_p[1], xy_p[2], self.curr_quat[0], self.curr_quat[1], self.curr_quat[2], self.curr_quat[3])
             # out and front
-            point2 = get_pose(point1.position.x - dir_vec[0], point1.position.y - dir_vec[1], curr.position.z, self.quat[0], self.quat[1], self.quat[2], self.quat[3])
+            point2 = get_pose(point1.position.x - dir_vec[0], point1.position.y - dir_vec[1], curr.position.z, self.curr_quat[0], self.curr_quat[1], self.curr_quat[2], self.curr_quat[3])
             # center and front
-            point3 = get_pose(point2.position.x - orth[0], point2.position.y - orth[1], curr.position.z, self.quat[0], self.quat[1], self.quat[2], self.quat[3])
+            point3 = get_pose(point2.position.x - orth[0], point2.position.y - orth[1], curr.position.z, self.curr_quat[0], self.curr_quat[1], self.curr_quat[2], self.curr_quat[3])
 
         # reverse order bc last in first out when pushing to front
         self.push_waypoint_front(point3)
@@ -157,7 +160,7 @@ class CommNode:
         curr = self.curr_pose
         next_point = new_goal
 
-        dir_vec = direct(curr.position, next_point.position)
+        dir_vec = self.direct(curr.position, next_point.position)
         angle = np.arctan2([dir_vec[1]], [dir_vec[0]])
         quat = tf.transformations.quaternion_from_euler(0, 0, angle[0]) 
         # turn_point = get_pose(curr.position.x, curr.position.y, curr.position.z, quat[0], quat[1], quat[2], quat[3])
@@ -438,16 +441,19 @@ class CommNode:
 
             # if obstacle detected, do obstaclle avoidance and self.pause is true. Only after obstacle avoidance is done, self.pause false and continue on way
             if self.obstacle_detected:
-                self.pause = True
-                # do generation
-                self.gen_avoidance()
-                self.obs_avoid_counter = 0
+                if self.pause == False:
+                    print("+++++++++++++++++GENERATING")
+                    self.pause = True
+                    # do generation
+                    self.gen_avoidance()
+                    self.obs_avoid_counter = 0
+
                 
             if self.curr_waypoint is None or self.is_close(self.curr_waypoint, pose_to_compare): #last check should be redundant but better safe than sorry
                 if len(self.waypoints) > 0:
                     # print("current waypoint reached at : ", self.curr_waypoint.position.x, self.curr_waypoint.position.y, self.curr_waypoint.position.z)
                     
-                    if not self.pause:
+                    if self.pause == False:
                         # if isturn = FALSE gen turn push to self.waypoints and set isturn = TRUE
                         # else: isturn = FALSE 
                         if (self.state_machine == 1): #final wigglepoint hit
@@ -465,6 +471,11 @@ class CommNode:
                             self.state_machine = 3
                             
                         elif (self.state_machine == 3): #waypoint hit / in the middle of wigglepoints
+                            print("===============IN 3 RIGHT NOW=============")
+                            print("CURRENT WAYPOINTS", self.waypoints)
+                            self.obstacle_detected = True
+                            # self.curr_waypoint = self.waypoint_pop()
+                            continue
                             if self.state_machine_counter == 0: # waypoint hit : create wigglepoints
                                 print("===============WAYPOINT HIT=============")
                                 self.create_wiggle(self.curr_waypoint)
@@ -480,16 +491,23 @@ class CommNode:
                             self.curr_waypoint = self.waypoint_pop()
 
                         print("new waypoint : ", self.curr_waypoint.position.x, self.curr_waypoint.position.y, self.curr_waypoint.position.z)
+                        
 
-                    if self.pause:
-                        print("===============PAUSED=============")
-                        # check that the avoidance waypoints have been reached
-                        if self.obs_avoid_counter < 3:
-                            print("===============%i/3 AVOID DONE=============", %self.obs_avoid_counter)
+            if self.pause == True:
+                print("===============PAUSED=============")
+                pose_to_compare = self.curr_pose
+                # check that the avoidance waypoints have been reached
+                if self.obs_avoid_counter < 3:
+                    if self.curr_waypoint is None or self.is_close(self.curr_waypoint, pose_to_compare): #last check should be redundant but better safe than sorry
+                        if len(self.waypoints) > 0:
+                            print("===============%i/3 AVOID DONE=============" %self.obs_avoid_counter)
                             # pop 3 obstacle avoidance waypoints
                             self.curr_waypoint = self.waypoint_pop()
                             self.obs_avoid_counter += 1
-                        else:
+                            print("new waypoint : ", self.curr_waypoint.position.x, self.curr_waypoint.position.y, self.curr_waypoint.position.z)
+                else:
+                    if self.curr_waypoint is None or self.is_close(self.curr_waypoint, pose_to_compare): #last check should be redundant but better safe than sorry
+                        if len(self.waypoints) > 0:
                             # reset variables and continue on path
                             print("===============AVOIDANCE DONE=============")
                             self.obs_avoid_counter = 0
@@ -499,12 +517,12 @@ class CommNode:
                             # and then pop next path waypoint
                             self.curr_waypoint = self.waypoint_pop()
                         
-                        print("new waypoint : ", self.curr_waypoint.position.x, self.curr_waypoint.position.y, self.curr_waypoint.position.z)
+                            print("new waypoint : ", self.curr_waypoint.position.x, self.curr_waypoint.position.y, self.curr_waypoint.position.z)
                     
             self.set_position(self.curr_waypoint)
             print("CURR pose in local: ", round(self.curr_pose.position.x, 3), round(self.curr_pose.position.y, 3), round(self.curr_pose.position.z, 3))
             eul = np.round(tf.transformations.euler_from_quaternion((self.curr_pose.orientation.x, self.curr_pose.orientation.y, self.curr_pose.orientation.z, self.curr_pose.orientation.w)), 3)
-            print("CURR orientation in locaL: ", eul[0], eul[1], eul[2])
+            print("CURR orientation in local: ", eul[0], eul[1], eul[2])
             if self.vicon_enabled:
                 print("CURR pose in vicon: ", self.curr_vicon.transform.translation.x, self.curr_vicon.transform.translation.y, self.curr_vicon.transform.translation.z)
             print(" ")
