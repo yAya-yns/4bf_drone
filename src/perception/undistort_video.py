@@ -78,7 +78,7 @@ def main():
 
     # input_name = 'checkerboard.avi'
     input_name = 'checkerboard.avi'
-    output_name = 'undist_' + input_name
+    output_name = input_name[:-4] + "_undist.avi"
 
     cap = cv.VideoCapture(input_name)
     w = int(cap.get(cv.CAP_PROP_FRAME_WIDTH))

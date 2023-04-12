@@ -22,7 +22,7 @@ def update_image(change):
 # cap = cv.VideoCapture(0)
 # # Define the codec and create VideoWriter object
 fourcc = cv.VideoWriter_fourcc(*'XVID')
-out = cv.VideoWriter('rgb_output/output.avi', fourcc, 30.0, (frame_width,  frame_height))
+out = cv.VideoWriter('data/output.avi', fourcc, 30.0, (frame_width,  frame_height))
 while True: # camera.running:
     # ret, frame = cap.read()
     # if not ret:
