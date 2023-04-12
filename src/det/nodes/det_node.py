@@ -20,17 +20,21 @@ class DetNode:
 
         self.num_disparities_ = 48
         self.block_size_ = 33
+        self.visualize_ = True
 
         # Initialize variables:
         self.disparity_image_ = None
         self.img_1_ = None
         self.img_2_ = None
-        self.img_1_info_ = None
-        self.img_2_info_ = None
+        self.img_1_ready_ = False
+        self.img_2_ready_ = False
+        self.cam_1_info_ = None
+        self.cam_2_info_ = None
         self.cam_1_map_y_ = None
         self.cam_1_map_x_ = None
         self.cam_2_map_y_ = None
         self.cam_2_map_x_ = None
+        self.map_ready_ = False
         self.window_ = False
         self.counter_ = 0
         self.baseline_ = 0.064
@@ -47,14 +51,14 @@ class DetNode:
         rospy.Subscriber("/camera/fisheye2/image_raw", Image, \
                          self.cam_2_cb)
         rospy.Subscriber("/camera/fisheye2/camera_info", CameraInfo, \
-                         self.cam_1_info_cb)
+                         self.cam_2_info_cb)
         
         self.od_pub_ = rospy.Publisher("/det/inview", \
             Float64, queue_size=10)
         self.timer_ = rospy.Timer(rospy.Duration(0.1), self.timer_cb)
 
     def cam_1_cb(self, msg):
-      if self.img_1_info_ == None:
+      if self.map_ready_ == False:
         return
       img_distorted = self.cv_bridge_.imgmsg_to_cv2(msg, desired_encoding="passthrough")
       img_undistorted = cv2.remap(
@@ -68,15 +72,16 @@ class DetNode:
       orig_height = img_undistorted.shape[0]
       new_height = orig_height//self.downscale_factor_
       # take center of image of new height
-      img_undistorted = img_undistorted[
+      self.img_1_ = img_undistorted[
           (orig_height - new_height)//2 : (orig_height + new_height)//2, :
       ]
       # convert from mono8 to bgr8
-      self.img_1_ = cv2.cvtColor(img_undistorted, cv2.COLOR_GRAY2BGR)
+      #self.img_1_ = cv2.cvtColor(img_undistorted, cv2.COLOR_GRAY2BGR)
+      self.img_1_ready_ = True
         
 
     def cam_2_cb(self, msg):
-      if self.img_2_info_ == None:
+      if self.map_ready_ == False:
         return
       img_distorted = self.cv_bridge_.imgmsg_to_cv2(msg, desired_encoding="passthrough")
       img_undistorted = cv2.remap(
@@ -90,34 +95,31 @@ class DetNode:
       orig_height = img_undistorted.shape[0]
       new_height = orig_height//self.downscale_factor_
       # take center of image of new height
-      img_undistorted = img_undistorted[
+      self.img_2_ = img_undistorted[
           (orig_height - new_height)//2 : (orig_height + new_height)//2, :
       ]
       # convert from mono8 to bgr8
-      self.img_2_ = cv2.cvtColor(img_undistorted, cv2.COLOR_GRAY2BGR)
+      #self.img_2_ = cv2.cvtColor(img_undistorted, cv2.COLOR_GRAY2BGR)
+      self.img_2_ready_ = True
         
 
     def cam_1_info_cb(self, msg):
         if self.cam_1_info_ == None:
             self.cam_1_info_ = msg
-            self.cam_2_map_x_, self.cam_2_map_y_ = \
-                self.generateMap(self.cam_1_info_)
 
     def cam_2_info_cb(self, msg):
         if self.cam_2_info_ == None:
             self.cam_2_info_ = msg
-            self.cam_2_map_x_, self.cam_2_map_y_ = \
-                self.generateMap(self.cam_2_info_)
 
     def timer_cb(self, event):
         msg = Float64()
         msg.data = -1.0
-        
-        if (self.img_1_info_ != None and self.img_2_info_ != None) and \
-            (self.img_1_map_x_ == None and self.img_2_map_y_ == None):
+        if (self.cam_1_info_ != None and self.cam_2_info_ != None) and \
+            (self.map_ready_ == False):
+            print("det_node::timer_cb: calling generate map")
             self.generateMap()
 
-        if self.img_2_ == None or self.img_1_ == None:
+        if self.img_1_ready_ == False or self.img_2_ready_ == False:
             print("det_node::timer_cb: image pair not yet ready")
             
         else:
@@ -130,38 +132,45 @@ class DetNode:
         return
     
     def generateMap(self):
-      k1 = np.array(self.cam_1_info_.K).reshape(3,3)
-      d1 = np.array(self.cam_1_info_.D)
-      k2 = np.array(self.cam_2_info_.K).reshape(3,3)
-      d2 = np.array(self.cam_2_info_.D)
-      T = np.array([self.baseline_, 0, 0]) # 64 mm baseline
+        k1 = np.array(self.cam_1_info_.K).reshape(3,3)
+        d1 = np.array(self.cam_1_info_.D)
+        k2 = np.array(self.cam_2_info_.K).reshape(3,3)
+        d2 = np.array(self.cam_2_info_.D)
+        T = np.array([self.baseline_, 0, 0]) # 64 mm baseline
 
-      R1, R2, P1, P2, Q, roi1, roi2 = cv2.stereoRectify(\
-          k1, d1, k2, d2, self.img_size_, R=np.eye(3), T=T)
-       
-      self.cam_1_map_x_, self.cam_1_map_y_ = \
-          cv2.fisheye.initUndistortRectifyMap(\
-              k1, d1, R1, P1, size=self.img_size_, m1type=cv2.CV_32FC1)
-      
-      self.cam_2_map_x_, self.cam_2_map_y_ = \
-          cv2.fisheye.initUndistortRectifyMap(\
-              k2, d2, R2, P2, size=self.img_size_, m1type=cv2.CV_32FC1) 
+        R1, R2, P1, P2, Q, roi1, roi2 = cv2.stereoRectify(\
+            k1, d1, k2, d2, self.img_size_, R=np.eye(3), T=T)
+        
+        self.cam_1_map_x_, self.cam_1_map_y_ = \
+            cv2.fisheye.initUndistortRectifyMap(\
+                k1, d1, R1, P1, size=self.img_size_, m1type=cv2.CV_32FC1)
+        
+        self.cam_2_map_x_, self.cam_2_map_y_ = \
+            cv2.fisheye.initUndistortRectifyMap(\
+                k2, d2, R2, P2, size=self.img_size_, m1type=cv2.CV_32FC1) 
+    
+        self.map_ready_ = True
 
     def generateDisparity(self):
-       self.disparity_image_ = self.stereo_bm_.compute(\
+        self.disparity_image_ = self.stereo_bm_.compute(\
             self.img_1_, self.img_2_).astype(np.float32) / self.num_disparities_
 
-    def processDisparity(self):
-        opencv_image = \
-            self.cv_bridge_.imgmsg_to_cv2(self.disparity_image_.image, \
-                                          desired_encoding='passthrough')
+        if self.visualize_:
+            disparity_color = cv2.applyColorMap(
+                cv2.convertScaleAbs(self.disparity_image_, alpha=255 / 16.0), cv2.COLORMAP_JET)
+            cv2.imshow("stereo", disparity_color)
+            cv2.imshow("raw", self.img_1_)
+            cv2.waitKey(1)
 
-        max_indexes = np.unravel_index(np.argsort(-opencv_image, axis=None),\
-                                       opencv_image.shape)
+
+
+    def processDisparity(self):
+        max_indexes = np.unravel_index(np.argsort(-self.disparity_image_, axis=None),\
+                                       self.disparity_image_.shape)
         max_x = max_indexes[0][:self.pixels_to_check_]
         max_y = max_indexes[1][:self.pixels_to_check_]
         avg_max_disp = \
-            np.average(opencv_image[max_indexes][:self.pixels_to_check_])
+            np.average(self.disparity_image_[max_indexes][:self.pixels_to_check_])
 
         #print(opencv_image[max_indexes])
 
