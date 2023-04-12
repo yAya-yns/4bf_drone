@@ -20,7 +20,7 @@ class DetNode:
 
         self.num_disparities_ = 48
         self.block_size_ = 33
-        self.visualize_ = False
+        self.visualize_ = True
         self.verbose_ = False
 
         # Initialize variables:

@@ -459,6 +459,13 @@ class CommNode:
         self.state_machine_counter = 0
         self.obs_avoid_counter = 0
         while(not rospy.is_shutdown()):
+            if self.current_state.mode != "OFFBOARD":
+                offboard = self.set_mode_client.call(offb_set_mode)
+                print(self.current_state.mode)
+                
+                if(offboard.mode_sent == True):
+                    rospy.loginfo("OFFBOARD enabled")
+
             if self.vicon_enabled:
                 pose_to_compare = Pose()
                 pose_to_compare.position.x = self.curr_vicon.transform.translation.x
