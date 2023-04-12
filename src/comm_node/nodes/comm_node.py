@@ -26,6 +26,14 @@ def dist(p1, p2):
     # both are pose.position
     return np.linalg.norm((np.array([p1.x, p1.y, p1.z]) - np.array([p2.x, p2.y, p2.z])))
 
+def deg_wrap(ang):
+    if (ang >= 0 and ang < np.pi) or (ang < 0 and ang > -np.pi):
+        return ang
+    elif ang < -np.pi:
+        return deg_wrap(ang + 2*np.pi)
+    else:
+        return deg_wrap(ang - 2*np.pi)
+
 class CommNode:
     def __init__(self):
         print('This is a dummy drone node to test communication with the ground control')
@@ -49,7 +57,8 @@ class CommNode:
         # Pubs, Subs and Transforms
         self.setpoint_pub_ = rospy.Publisher("/mavros/setpoint_position/local", PoseStamped, queue_size=10)
         self.local_pose_sub = rospy.Subscriber("/mavros/local_position/pose", PoseStamped, callback = self.callback_pose)
-        # self.obstacle_sub = rospy.Subscriber("---obst topic bool ---", Float64, callback = self.callback_obs)
+        # self.obstacles_sub = rospy.Subscriber("/det/inview", Float64, callback = self.callback_obs)
+        
         
         self.state_sub = rospy.Subscriber("/mavros/state", State, callback = self.state_cb)
         self.vicon_sub = rospy.Subscriber("/vicon/ROB498_Drone/ROB498_Drone", TransformStamped, callback = self.callback_vicon)
@@ -58,7 +67,7 @@ class CommNode:
         # # Transforms TODO: add back after velocity testing
         self.class_name_ = "CommNode::"
         self.max_vel = 0.2 #m/s
-        self.goal_height = 0.5 #m
+        self.goal_height = 0.7 #m
 
         self.goal_pose = get_pose(0, 0, self.goal_height)
 
@@ -69,6 +78,7 @@ class CommNode:
         self.dist_tolerance = 0.10 #tolerance before moving to next waypoint
         self.ang_tolerance = 0.17 #0.17 #tolerance of radian before moving to next
         self.waypoints = [] # collection of pose
+        self.wiggle_dist = 0 # 0.25
         self.waypoints_arr = np.empty((0,3))
         self.waypoints_posearray = PoseArray()
         self.waypoints_recived = False
@@ -99,7 +109,7 @@ class CommNode:
         p1 = np.array([p1.x, p1.y])
         p2 = np.array([p2.x, p2.y])
         d = p2 - p1
-        self.curr_dir = d/np.linalg.norm(d)
+        # self.curr_dir = d/np.linalg.norm(d)
         return d/np.linalg.norm(d)
     
 
@@ -115,37 +125,42 @@ class CommNode:
         ang1 = tf.transformations.euler_from_quaternion((pose1.orientation.x, pose1.orientation.y, pose1.orientation.z, pose1.orientation.w))
         ang2 = tf.transformations.euler_from_quaternion((pose2.orientation.x, pose2.orientation.y, pose2.orientation.z, pose2.orientation.w))
 
-        return dist(p1, p2) < self.dist_tolerance and abs(ang1[2] - ang2[2]) < self.ang_tolerance
+        print(abs(deg_wrap(ang1[2]) - deg_wrap(ang2[2])) < self.ang_tolerance)
+
+        return dist(p1, p2) < self.dist_tolerance and abs(deg_wrap(ang1[2] - ang2[2])) < self.ang_tolerance
     
     def gen_avoidance(self):
         # generate waypoints in a box around the obstacle
         # in 1m box maybe?
         print('000000000000000 GENERATING AVOIDANCE 000000000000000')
         self.lock.acquire()
+
+        self.push_waypoint_front(self.curr_waypoint)
+
         curr = self.curr_pose
-        orth = np.array([self.curr_dir[1], -self.curr_dir[0]]) * self.box_size
+        orth = np.array([self.curr_dir[1], -self.curr_dir[0]]) * self.box_size/2
         dir_vec = self.curr_dir * self.box_size
 
         xy_p = np.array([curr.position.x + orth[0], curr.position.y + orth[1], curr.position.z])
         xy_m = np.array([curr.position.x - orth[0], curr.position.y - orth[1], curr.position.z])
 
-        if np.linalg.norm(xy_p) > np.linalg.norm(xy_m):
+        # if np.linalg.norm(xy_p) > np.linalg.norm(xy_m):
             # out horizontally
-            print("generating in left")
-            point1 = get_pose(xy_m[0], xy_m[1], xy_m[2], self.curr_quat[0], self.curr_quat[1], self.curr_quat[2], self.curr_quat[3])
-            # out and front
-            point2 = get_pose(point1.position.x + dir_vec[0], point1.position.y + dir_vec[1], curr.position.z, self.curr_quat[0], self.curr_quat[1], self.curr_quat[2], self.curr_quat[3])   
-            # center and front
-            point3 = get_pose(point2.position.x + orth[0], point2.position.y + orth[1], curr.position.z, self.curr_quat[0], self.curr_quat[1], self.curr_quat[2], self.curr_quat[3])
+        print("generating in left")
+        point1 = get_pose(xy_m[0], xy_m[1], xy_m[2], self.curr_quat[0], self.curr_quat[1], self.curr_quat[2], self.curr_quat[3])
+        # out and front
+        point2 = get_pose(point1.position.x + dir_vec[0], point1.position.y + dir_vec[1], curr.position.z, self.curr_quat[0], self.curr_quat[1], self.curr_quat[2], self.curr_quat[3])   
+        # center and front
+        point3 = get_pose(point2.position.x + orth[0], point2.position.y + orth[1], curr.position.z, self.curr_quat[0], self.curr_quat[1], self.curr_quat[2], self.curr_quat[3])
         
-        else:
-            print("generating in right")
-            # out horizontally
-            point1 = get_pose(xy_p[0], xy_p[1], xy_p[2], self.curr_quat[0], self.curr_quat[1], self.curr_quat[2], self.curr_quat[3])
-            # out and front
-            point2 = get_pose(point1.position.x - dir_vec[0], point1.position.y - dir_vec[1], curr.position.z, self.curr_quat[0], self.curr_quat[1], self.curr_quat[2], self.curr_quat[3])
-            # center and front
-            point3 = get_pose(point2.position.x - orth[0], point2.position.y - orth[1], curr.position.z, self.curr_quat[0], self.curr_quat[1], self.curr_quat[2], self.curr_quat[3])
+        # else:
+        #     print("generating in right")
+        #     # out horizontally
+        #     point1 = get_pose(xy_p[0], xy_p[1], xy_p[2], self.curr_quat[0], self.curr_quat[1], self.curr_quat[2], self.curr_quat[3])
+        #     # out and front
+        #     point2 = get_pose(point1.position.x - dir_vec[0], point1.position.y - dir_vec[1], curr.position.z, self.curr_quat[0], self.curr_quat[1], self.curr_quat[2], self.curr_quat[3])
+        #     # center and front
+        #     point3 = get_pose(point2.position.x - orth[0], point2.position.y - orth[1], curr.position.z, self.curr_quat[0], self.curr_quat[1], self.curr_quat[2], self.curr_quat[3])
 
         # reverse order bc last in first out when pushing to front
         self.push_waypoint_front(point3)
@@ -159,15 +174,15 @@ class CommNode:
         self.lock.acquire()
         curr = self.curr_pose
         next_point = new_goal
+        print('NEW GOAL: ', new_goal)
 
         dir_vec = self.direct(curr.position, next_point.position)
-        angle = np.arctan2([dir_vec[1]], [dir_vec[0]])
-        quat = tf.transformations.quaternion_from_euler(0, 0, angle[0]) 
+        angle = deg_wrap(np.arctan2([dir_vec[1]], [dir_vec[0]])[0])
+        quat = tf.transformations.quaternion_from_euler(0, 0, angle) 
         # turn_point = get_pose(curr.position.x, curr.position.y, curr.position.z, quat[0], quat[1], quat[2], quat[3])
         turn_point = get_pose(curr.position.x, curr.position.y, self.goal_height, quat[0], quat[1], quat[2], quat[3])
         
         self.push_waypoint_front(turn_point)
-        self.quat = quat
         self.lock.release()
         return
     
@@ -178,7 +193,7 @@ class CommNode:
         '''
         self.lock.acquire()
         print('generating wiggle points...')
-        dist = 0.25
+        dist = self.wiggle_dist 
         curr = self.curr_pose
 
         # safe_point = get_pose(new_goal.position.x, new_goal.position.y, self.goal_height, curr.orientation.x, curr.orientation.y, curr.orientation.z, curr.orientation.w) 
@@ -238,6 +253,7 @@ class CommNode:
 
   # Callback handlers
     def handle_launch(self):
+        print("+++++++++++++++++++++++++++++++++++")
         print('Launch Requested. Your drone should take off.')
         if not self.active:
             print("Cannot launch, not connected yet")
@@ -276,35 +292,38 @@ class CommNode:
 
     def handle_test(self):
         print('Test Requested. Your drone should perform the required tasks. Recording starts now.')
-        
-        if self.waypoints_arr == np.zeros((0,3)): # TODO: uncomment after velicity test
-            print('have not recieved waypoint array')
-            print('TEST FAIL')
-            return EmptyResponse()
-        else:
-            for pose in self.waypoints_posearray.poses:
-                # self.create_wiggle(pose)
-                self.waypoints.append(pose)
+        self.obstacle_detected = True
+        new = get_pose(0.0, 0.0, self.goal_height)
+        self.waypoints.append(new)
+        return EmptyResponse(0)
+        # if self.waypoints_arr == np.zeros((0,3)): # TODO: uncomment after velicity test
+        #     print('have not recieved waypoint array')
+        #     print('TEST FAIL')
+        #     return EmptyResponse()
+        # else:
+        #     for pose in self.waypoints_posearray.poses:
+        #         # self.create_wiggle(pose)
+        #         self.waypoints.append(pose)
 
-        if len(self.waypoints) == self.waypoints_arr.shape[0] * 5:
-            print('waypoint creation success')
-        else:
-            print('waypoint creation FAIL')
-            print('TEST FAIL')
-            return EmptyResponse()
+        # if len(self.waypoints) == self.waypoints_arr.shape[0] * 5:
+        #     print('waypoint creation success')
+        # else:
+        #     print('waypoint creation FAIL')
+        #     print('TEST FAIL')
+        #     return EmptyResponse()
 
-        # check connection to realsense and can see odom messages
-        if not self.active:
-            print("Cannot test, not connected yet")
-            return EmptyResponse()
+        # # check connection to realsense and can see odom messages
+        # if not self.active:
+        #     print("Cannot test, not connected yet")
+        #     return EmptyResponse()
             
-        if self.curr_pose != None:
-            print('can recieve odom measurements')
-            return EmptyResponse()
-        else:
-            print('CANNOT recieve odom measurements')
-            print('TEST FAIL')
-            return EmptyResponse()
+        # if self.curr_pose != None:
+        #     print('can recieve odom measurements')
+        #     return EmptyResponse()
+        # else:
+        #     print('CANNOT recieve odom measurements')
+        #     print('TEST FAIL')
+        #     return EmptyResponse()
       
 
     def handle_land(self):
@@ -338,13 +357,22 @@ class CommNode:
     
     def callback_pose(self, pose):
         self.curr_pose = pose.pose
+        q = pose.pose.orientation
+        self.curr_quat = np.array([q.x, q.y, q.z, q.w])
+        eul = tf.transformations.euler_from_quaternion((self.curr_quat[0], self.curr_quat[1], self.curr_quat[2], self.curr_quat[3])) 
+        ang = eul[2]
+        self.curr_dir = np.array([np.cos(ang), np.sin(ang)])
         return EmptyResponse()
     
     def callback_obs(self, obs):
-        if obs == -1:
+        if obs.data == -1.0:
             self.obstacle_detected = False
         else: 
-            self.obs_y = obs
+            # print("========================")
+            # print("===========:)===========")
+            # print("========================")
+            print(obs.data)
+            self.obs_y = obs.data
             self.obstacle_detected = True
         return EmptyResponse()
     
@@ -396,10 +424,11 @@ class CommNode:
 
         takeoff_target = get_pose(0.0, 0.0, 0.0)
 
-        while(not rospy.is_shutdown() and self.current_state.mode != "OFFBOARD" and not self.current_state.armed):
+        while(not rospy.is_shutdown() and (self.current_state.mode != "OFFBOARD" and not self.current_state.armed)):
             armed = self.arming_client.call(arm_cmd)
             offboard = self.set_mode_client.call(offb_set_mode)
-
+            print(self.current_state.mode)
+            
             if(offboard.mode_sent == True):
                 rospy.loginfo("OFFBOARD enabled")
             elif(armed.success == True):
@@ -446,6 +475,7 @@ class CommNode:
                     self.pause = True
                     # do generation
                     self.gen_avoidance()
+                    self.curr_waypoint = self.waypoint_pop()
                     self.obs_avoid_counter = 0
 
                 
@@ -458,7 +488,7 @@ class CommNode:
                         # else: isturn = FALSE 
                         if (self.state_machine == 1): #final wigglepoint hit
                             print("===============WIGGLEPOINTs FINISHED=============")
-                            self.create_turn_point(self.waypoints[-1])
+                            self.create_turn_point(self.waypoints[0])
                             self.state_machine = 2
 
                             self.curr_waypoint = self.waypoint_pop()
@@ -473,9 +503,8 @@ class CommNode:
                         elif (self.state_machine == 3): #waypoint hit / in the middle of wigglepoints
                             print("===============IN 3 RIGHT NOW=============")
                             print("CURRENT WAYPOINTS", self.waypoints)
-                            self.obstacle_detected = True
-                            # self.curr_waypoint = self.waypoint_pop()
-                            continue
+                            # self.obstacle_detected = True
+                            # continue
                             if self.state_machine_counter == 0: # waypoint hit : create wigglepoints
                                 print("===============WAYPOINT HIT=============")
                                 self.create_wiggle(self.curr_waypoint)
@@ -523,6 +552,7 @@ class CommNode:
             print("CURR pose in local: ", round(self.curr_pose.position.x, 3), round(self.curr_pose.position.y, 3), round(self.curr_pose.position.z, 3))
             eul = np.round(tf.transformations.euler_from_quaternion((self.curr_pose.orientation.x, self.curr_pose.orientation.y, self.curr_pose.orientation.z, self.curr_pose.orientation.w)), 3)
             print("CURR orientation in local: ", eul[0], eul[1], eul[2])
+            print("CURR DIR ", self.curr_dir)
             if self.vicon_enabled:
                 print("CURR pose in vicon: ", self.curr_vicon.transform.translation.x, self.curr_vicon.transform.translation.y, self.curr_vicon.transform.translation.z)
             print(" ")
@@ -532,8 +562,9 @@ class CommNode:
                 print("TARGET pose in vicon: ", self.curr_waypoint.position.x, self.curr_waypoint.position.y, self.curr_waypoint.position.z)
             else:
                 print("TARGET pose in local: ", round(self.curr_waypoint.position.x, 3), round(self.curr_waypoint.position.y, 3), round(self.curr_waypoint.position.z, 3))
-                print("TARGET orientation in local: ", round(self.curr_waypoint.orientation.x, 3), round(self.curr_waypoint.orientation.y, 3), round(self.curr_waypoint.orientation.z, 3), round(self.curr_waypoint.orientation.w, 3))
-
+                eul = np.round(tf.transformations.euler_from_quaternion((self.curr_waypoint.orientation.x, self.curr_waypoint.orientation.y, self.curr_waypoint.orientation.z, self.curr_waypoint.orientation.w)), 3)
+                print("TARGET orientation in local: ", eul[0], eul[1], eul[2])
+            
             print(" ")
             print(" ")
 

@@ -20,7 +20,7 @@ class DetNode:
 
         self.num_disparities_ = 48
         self.block_size_ = 33
-        self.visualize_ = True
+        self.visualize_ = False
         self.verbose_ = False
 
         # Initialize variables:
@@ -73,9 +73,7 @@ class DetNode:
       orig_height = img_undistorted.shape[0]
       new_height = orig_height//self.downscale_factor_
       # take center of image of new height
-      self.img_1_ = img_undistorted[
-          (orig_height - new_height)//2 : (orig_height + new_height)//2, :
-      ]
+      self.img_1_ = img_undistorted[0:new_height, :]
       # convert from mono8 to bgr8
       #self.img_1_ = cv2.cvtColor(img_undistorted, cv2.COLOR_GRAY2BGR)
       self.img_1_ready_ = True
@@ -96,9 +94,7 @@ class DetNode:
       orig_height = img_undistorted.shape[0]
       new_height = orig_height//self.downscale_factor_
       # take center of image of new height
-      self.img_2_ = img_undistorted[
-          (orig_height - new_height)//2 : (orig_height + new_height)//2, :
-      ]
+      self.img_2_ = img_undistorted[0:new_height, :]
       # convert from mono8 to bgr8
       #self.img_2_ = cv2.cvtColor(img_undistorted, cv2.COLOR_GRAY2BGR)
       self.img_2_ready_ = True
@@ -155,6 +151,8 @@ class DetNode:
     def generateDisparity(self):
         self.disparity_image_ = self.stereo_bm_.compute(\
             self.img_1_, self.img_2_).astype(np.float32) / self.num_disparities_
+
+        self.disparity_image_ = self.disparity_image_[:,250:700]
 
         if self.visualize_:
             disparity_color = cv2.applyColorMap(
