@@ -57,7 +57,7 @@ class CommNode:
         # Pubs, Subs and Transforms
         self.setpoint_pub_ = rospy.Publisher("/mavros/setpoint_position/local", PoseStamped, queue_size=10)
         self.local_pose_sub = rospy.Subscriber("/mavros/local_position/pose", PoseStamped, callback = self.callback_pose)
-        # self.obstacles_sub = rospy.Subscriber("/det/inview", Float64, callback = self.callback_obs)
+        self.obstacles_sub = rospy.Subscriber("/det/inview", Float64, callback = self.callback_obs)
         
         
         self.state_sub = rospy.Subscriber("/mavros/state", State, callback = self.state_cb)
@@ -101,7 +101,7 @@ class CommNode:
         self.obstacle_detected = False
         self.obs_y = None
         self.img_width = 848
-        self.box_size = 0.5
+        self.box_size = 2
 
     def direct(self, p1, p2):
         # going 1 --> 2
@@ -125,7 +125,7 @@ class CommNode:
         ang1 = tf.transformations.euler_from_quaternion((pose1.orientation.x, pose1.orientation.y, pose1.orientation.z, pose1.orientation.w))
         ang2 = tf.transformations.euler_from_quaternion((pose2.orientation.x, pose2.orientation.y, pose2.orientation.z, pose2.orientation.w))
 
-        print(abs(deg_wrap(ang1[2]) - deg_wrap(ang2[2])) < self.ang_tolerance)
+        #print(abs(deg_wrap(ang1[2]) - deg_wrap(ang2[2])) < self.ang_tolerance)
 
         return dist(p1, p2) < self.dist_tolerance and abs(deg_wrap(ang1[2] - ang2[2])) < self.ang_tolerance
     
@@ -148,19 +148,19 @@ class CommNode:
             # out horizontally
         print("generating in left")
         point1 = get_pose(xy_m[0], xy_m[1], xy_m[2], self.curr_quat[0], self.curr_quat[1], self.curr_quat[2], self.curr_quat[3])
-        # out and front
+            # out and front
         point2 = get_pose(point1.position.x + dir_vec[0], point1.position.y + dir_vec[1], curr.position.z, self.curr_quat[0], self.curr_quat[1], self.curr_quat[2], self.curr_quat[3])   
-        # center and front
+            # center and front
         point3 = get_pose(point2.position.x + orth[0], point2.position.y + orth[1], curr.position.z, self.curr_quat[0], self.curr_quat[1], self.curr_quat[2], self.curr_quat[3])
-        
-        # else:
-        #     print("generating in right")
-        #     # out horizontally
-        #     point1 = get_pose(xy_p[0], xy_p[1], xy_p[2], self.curr_quat[0], self.curr_quat[1], self.curr_quat[2], self.curr_quat[3])
-        #     # out and front
-        #     point2 = get_pose(point1.position.x - dir_vec[0], point1.position.y - dir_vec[1], curr.position.z, self.curr_quat[0], self.curr_quat[1], self.curr_quat[2], self.curr_quat[3])
-        #     # center and front
-        #     point3 = get_pose(point2.position.x - orth[0], point2.position.y - orth[1], curr.position.z, self.curr_quat[0], self.curr_quat[1], self.curr_quat[2], self.curr_quat[3])
+            
+        #else:
+         #   print("generating in right")
+            # out horizontally
+          #  point1 = get_pose(xy_p[0], xy_p[1], xy_p[2], self.curr_quat[0], self.curr_quat[1], self.curr_quat[2], self.curr_quat[3])
+            # out and front
+           # point2 = get_pose(point1.position.x - dir_vec[0], point1.position.y - dir_vec[1], curr.position.z, self.curr_quat[0], self.curr_quat[1], self.curr_quat[2], self.curr_quat[3])
+            # center and front
+           # point3 = get_pose(point2.position.x - orth[0], point2.position.y - orth[1], curr.position.z, self.curr_quat[0], self.curr_quat[1], self.curr_quat[2], self.curr_quat[3])
 
         # reverse order bc last in first out when pushing to front
         self.push_waypoint_front(point3)
@@ -264,11 +264,11 @@ class CommNode:
 
         self.waypoints.append(get_pose(0, 0, self.goal_height))
 
-        new = get_pose(1.0, 1.0, self.goal_height)
+        new = get_pose(2.5, 2.5, self.goal_height)
         self.waypoints.append(new)
 
-        new = get_pose(0.0, 0.0, self.goal_height)
-        self.waypoints.append(new)
+        #new = get_pose(3.5, 3.5, self.goal_height)
+        #self.waypoints.append(new)
 
         #############################
 
@@ -371,7 +371,7 @@ class CommNode:
             # print("========================")
             # print("===========:)===========")
             # print("========================")
-            print(obs.data)
+            #print(obs.data)
             self.obs_y = obs.data
             self.obstacle_detected = True
         return EmptyResponse()
@@ -559,7 +559,7 @@ class CommNode:
             print("CURR pose in local: ", round(self.curr_pose.position.x, 3), round(self.curr_pose.position.y, 3), round(self.curr_pose.position.z, 3))
             eul = np.round(tf.transformations.euler_from_quaternion((self.curr_pose.orientation.x, self.curr_pose.orientation.y, self.curr_pose.orientation.z, self.curr_pose.orientation.w)), 3)
             print("CURR orientation in local: ", eul[0], eul[1], eul[2])
-            print("CURR DIR ", self.curr_dir)
+            #print("CURR DIR ", self.curr_dir)
             if self.vicon_enabled:
                 print("CURR pose in vicon: ", self.curr_vicon.transform.translation.x, self.curr_vicon.transform.translation.y, self.curr_vicon.transform.translation.z)
             print(" ")
