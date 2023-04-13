@@ -1,6 +1,11 @@
 import numpy as np
 import cv2 as cv
 
+def view(img, text=''):
+    '''for quickly debugging and viewing image'''
+    cv.imshow(text, img)
+    cv.waitKey()
+    # exit()
 
 def compare_img(imgs):
     # img_concat = cv.hconcat([np.uint8(img) for img in imgs])
@@ -11,7 +16,7 @@ def compare_img(imgs):
     cv.destroyAllWindows()
 
 
-def proecess_video(input_name, output_name, display=False):
+def process_video(input_name, output_name, display=False):
     cap = cv.VideoCapture(input_name)
     w = int(cap.get(cv.CAP_PROP_FRAME_WIDTH))
     h = int(cap.get(cv.CAP_PROP_FRAME_HEIGHT))
@@ -21,8 +26,8 @@ def proecess_video(input_name, output_name, display=False):
     fourcc = cv.VideoWriter_fourcc(*'XVID')
     out = cv.VideoWriter(output_name, fourcc, fps, (w, h))
     
-    if not cap.isOpened():
-        print("Error opening video file")
+    assert cap.isOpened(), "Error opening video file"
+    
 
     # Loop over the frames in the video
     while cap.isOpened():
@@ -33,14 +38,13 @@ def proecess_video(input_name, output_name, display=False):
         if not ret:
             break
 
-        processed_frame = process_img(frame)
+        processed_frame = obstacle_detection(frame)
         out.write(processed_frame)
 
         # print(processed_frame.shape)
         # print((w,h))
         # xxxx
 
-        ###### uncomment below if you want to display the frame
         if display:
             cv.imshow('Frame', processed_frame)
             key = cv.waitKey(fps+3)
@@ -51,10 +55,10 @@ def proecess_video(input_name, output_name, display=False):
     out.release()
     cap.release()
     cv.destroyAllWindows()
-    print("obj_detected video saved as: " + output_name)
+    print(f'obj_detected video saved as: {output_name}')
     return True
 
-def process_img(img):
+def obstacle_detection(img, highlight_scale=1, alpha=2.5, beta=-20):
     '''
     Plan:
 
@@ -63,19 +67,6 @@ def process_img(img):
     step 2: identify pillars
     
     '''
-    img_with_bboxs, bboxs = obstacle_detection(img)
-
-
-    processed_img = img_with_bboxs
-
-    # compare_img([img, processed_img])
-    # xxxx
-    return processed_img
-
-
-
-def obstacle_detection(img, highlight_scale=1, alpha=2.5, beta=-20):
-
     highlight_scale=0.6
     highlight_threshold=230
 
@@ -97,38 +88,33 @@ def obstacle_detection(img, highlight_scale=1, alpha=2.5, beta=-20):
     # img_highlight = img
 
     # adjust contrast and brightness
-    img = contrast_n_brightness_adjust(img, alpha, beta)
+    img = cv.convertScaleAbs(img, alpha=alpha, beta=beta)
     img_contrast = img
 
 
-    # # adjust highlight
-    img = highlight_adjust(img, scale=highlight_scale, threshold=highlight_threshold)
-
+    # adjust highlight
+    img[img > highlight_threshold] = img[img > highlight_threshold] * highlight_scale
+    img = np.uint8(img) 
 
     # filter out yellow
     img = filter_color(img, colors=['yellow'])
 
     # img = denoise(img)
+    img_blur = cv.GaussianBlur(img, (5, 5), 2)
 
-    # img = findContours(img, kernel_size=(5,5))
+    return img_blur
 
-
-    detected_img, bboxs = img, []
-
-
-    return detected_img, bboxs
-
-def highlight_adjust(img, scale, threshold):
-    img[img > threshold] = img[img > threshold] * scale
-    img = np.uint8(img) 
-    return img
+# def highlight_adjust(img, scale, threshold):
+#     img[img > threshold] = img[img > threshold] * scale
+#     img = np.uint8(img) 
+#     return img
 
 def normalization(img):
     return cv.normalize(img,None,0,255,cv.NORM_MINMAX)
 
 
-def contrast_n_brightness_adjust(img, alpha, beta):
-    return cv.convertScaleAbs(img, alpha=alpha, beta=beta)
+# def contrast_n_brightness_adjust(img, alpha, beta):
+#     return cv.convertScaleAbs(img, alpha=alpha, beta=beta)
 
 def filter_color(img, colors):
     hsv = cv.cvtColor(img, cv.COLOR_BGR2HSV)
@@ -170,16 +156,6 @@ def filter_color(img, colors):
         img_out += green
     return np.uint8(normalization(img_out))
 
-def denoise(img):
-    gaussian = cv.GaussianBlur(img, (7, 7), 0)
-    
-    # median = cv.medianBlur(img, 5) # 1,3, 5, 7
-
-    # Display the original image, the image with Gaussian blur, and the image with Median filter
-    # compare_img([img, gaussian, median])
-    # xxx
-    return gaussian
-
 # def findContours(img, kernel_size):
 #     kernel = np.ones(kernel_size, np.uint8)
 #     img = cv.morphologyEx(img, cv.MORPH_CLOSE, kernel)
@@ -195,19 +171,10 @@ def denoise(img):
 #             img = cv.rectangle(img, (x,y), (x+w,y+h), (0,255,0), 2)
 #     return img
 
-def main():
-
-    input_name = 'data/arena_video.avi'
-    output_name = input_name[:-4] + "processed.avi"
-    
-    proecess_video(input_name, output_name, display=True)
-
-
-
-    return True
-
-
-
 
 if __name__ == "__main__":
-    main()
+    name = 'arena_video'
+    input_name = f'src/perception/data/{name}.avi'
+    output_name = input_name.replace(name, 'processed')
+    
+    process_video(input_name, output_name, display=True)
