@@ -1,28 +1,26 @@
-#!/usr/bin/python
-import sys
-#sys.path.insert(0, "/usr/local/lib/python3.6/dist-packages/jetcam-0.0.0-py3.6.egg")
-#print(sys.version)
+# MIT License
+# Copyright (c) 2019-2022 JetsonHacks
 
-import rospy
+# Using a CSI camera (such as the Raspberry Pi Version 2) connected to a
+# NVIDIA Jetson Nano Developer Kit using OpenCV
+# Drivers for the camera and OpenCV are included in the base image
+
 import cv2
 import numpy as np
-from std_msgs.msg import Float64
-from geometry_msgs.msg import Point
-#from jetcam.csi_camera import CSICamera
 import time
+import rospy
+from geometry_msgs.msg import Point
 
-class DetNode:
+class ObjectDetection:
     def __init__(self):
         rospy.init_node("monocular")
-        print(cv2.__version__)
-
         # Configurable params:
         self.width_ = 640
         self.height_ = 480
         self.update_rate_ = 10
         self.const = 54.0
         self.visualize = True
-        self.lower_yellow1 = np.array([20, 150, 150])
+        self.lower_yellow1 = np.array([20, 100, 100])
         self.upper_yellow1 = np.array([30, 255, 255])
 
         self.intrinsics_ = np.array([[411.838509092687, 0.0, 289.815738517589],
@@ -34,21 +32,6 @@ class DetNode:
 
         # Initialize variables:
         self.counter = 0
-        #self.camera = CSICamera(\
-        #        width= self.width_, height=self.height_, capture_width=self.width_, capture_height=self.height_, capture_fps=120)
-        
-        gst_str = ( "nvarguscamerasrc sensor-id=0 !"
-        "video/x-raw(memory:NVMM), width=(int)1920, height=(int)1080, framerate=(fraction)30/1 ! "
-        "nvvidconv flip-method=2 ! "
-        "video/x-raw, width=(int)640, height=(int)480, format=(string)BGRx ! "
-        "videoconvert ! "
-        "video/x-raw, format=(string)BGR ! appsink").format(self.width_, self.height_)
-
-        gst_str = ("nvarguscamerasrc ! video/x-raw(memory:NVMM), width=(int)1920, height=(int)1080,format=(string)NV12, framerate=(fraction)30/1 ! nvvidconv ! video/x-raw, format=(string)BGRx ! videoconvert ! video/x-raw, format=(string)RGBA ! appsink")
-
-        self.cap = cv2.VideoCapture(self.gstreamer_pipeline(flip_method=0), cv2.CAP_GSTREAMER)
-
-        self.window_title = "title"
         
         self.w_h_pair = (self.width_,self.height_)
 
@@ -59,109 +42,27 @@ class DetNode:
         self.od_pub_ = rospy.Publisher("/obj/pos", \
             Point, queue_size=10)
 
-        
-        if self.cap.isOpened():
-            #try:
-            while True:
-                global_start = time.time()
-                ret_val, img = self.cap.read()
-                # Check to see if the user closed the window
-                # Under GTK+ (Jetson Default), WND_PROP_VISIBLE does not work correctly. Under Qt it does
-                # GTK - Substitute WND_PROP_AUTOSIZE to detect if window has been closed by user
-                start = time.time()
-                img_undist = self.undistortImage(img)[:240,:]
-                img_undist = cv2.resize(img_undist, (320, 120), interpolation = cv2.INTER_NEAREST)
-                print("undistort image took " + str(time.time() - start))
-                start = time.time()
-                img_filtered = self.filter_color(img_undist, ["yellow", "green"])
-                print("filter image took " + str(time.time() - start))
-                start = time.time()
-                width, x, img_padded, det_ready = self.obstacleDetection(img_filtered)
-                print("OD took " + str(time.time() - start))
-                            
-                if self.visualize:
-                    #cv2.imshow("monocular", img_undist)
-                    #cv2.imshow("filtered", img_undist)
-                    #print(f'width: {width} \t x:{x}')
-                    self.counter += 1
-                    #cv2.imwrite('./img' + str(self.counter) + '.png', img_undist) 
-                    #cv2.waitKey(1)
 
-                if not det_ready:
-                    print("total took " + str(time.time() - global_start))
-                    return
-                msg = self.getWorldPoint(width, x)
-                #if self.visualize:
-                print(msg)
-                self.od_pub_.publish(msg)
-                print("total took " + str(time.time() - global_start))
-
-
-                if cv2.getWindowProperty(self.window_title, cv2.WND_PROP_AUTOSIZE) >= 0:
-                    cv2.imshow(self.window_title, frame)
-                else:
-                    break 
-                keyCode = cv2.waitKey(10) & 0xFF
-                # Stop the program on the ESC key or 'q'
-                if keyCode == 27 or keyCode == ord('q'):
-                    break
-            #finally:
-            #    self.cap.release()
-            #    cv2.destroyAllWindows()
-        
-        #self.timer_ = rospy.Timer(rospy.Duration(1.0/self.update_rate_), self.timer_cb)
-        print("broke!")
-
-    def gstreamer_pipeline(
-        capture_width=1920,
-        capture_height=1080,
-        display_width=960,
-        display_height=540,
-        framerate=30,
-        flip_method=0):
-        return (
-            "nvarguscamerasrc sensor-id=0 !"
-            "video/x-raw(memory:NVMM), width=(int)1920, height=(int)1080, framerate=(fraction)30/1 ! "
-            "nvvidconv flip-method=0 ! "
-            "video/x-raw, width=(int)1920, height=(int)1080, format=(string)BGRx ! "
-            "videoconvert ! "
-            "video/x-raw, format=(string)BGR ! appsink")
-
-
-
-    def timer_cb(self, event):
-        global_start = time.time()
-        img, ready = self.getImage()
-        if not ready:
-            print("image not yet ready")
-            return
-        start = time.time()
+    def process(self, img):
         img_undist = self.undistortImage(img)[:240,:]
-        img_undist = cv2.resize(img_undist, (320, 120), interpolation = cv2.INTER_NEAREST)
-        print("undistort image took " + str(time.time() - start))
-        start = time.time()
+        #img_undist = cv2.resize(img_undist, (320, 120), interpolation = cv2.INTER_NEAREST)
         img_filtered = self.filter_color(img_undist, ["yellow", "green"])
-        print("filter image took " + str(time.time() - start))
-        start = time.time()
         width, x, img_padded, det_ready = self.obstacleDetection(img_filtered)
-        print("OD took " + str(time.time() - start))
                        
         if self.visualize:
-            cv2.imshow("monocular", img_undist)
+            #cv2.imshow("monocular", img_padded)
             #cv2.imshow("filtered", img_undist)
             #print(f'width: {width} \t x:{x}')
             self.counter += 1
             #cv2.imwrite('./img' + str(self.counter) + '.png', img_undist) 
-            cv2.waitKey(1)
+            #cv2.waitKey(1)
 
         if not det_ready:
-            print("total took " + str(time.time() - global_start))
             return
         msg = self.getWorldPoint(width, x)
         #if self.visualize:
         print(msg)
         self.od_pub_.publish(msg)
-        print("total took " + str(time.time() - global_start))
         return
     
     def getImage(self):
@@ -305,19 +206,76 @@ class DetNode:
             mask = cv2.inRange(hsv, self.lower_yellow1, self.upper_yellow1)
             yellow = cv2.bitwise_and(img, img, mask=mask)
             img_out += yellow
-        #if 'green' in colors:
-        #    lower_green = np.array([30, 50, 50])
-        #    upper_green = np.array([90, 255, 255])
+        if 'green' in colors:
+            lower_green = np.array([30, 125, 125])
+            upper_green = np.array([90, 255, 255])
 
             # Create a mask that isolates the green color from the rest of the image
-           # mask = cv2.inRange(hsv, lower_green, upper_green)
+            mask = cv2.inRange(hsv, lower_green, upper_green)
 
             # Apply the mask to the original image to get the green parts
-            #green = cv2.bitwise_and(img, img, mask=mask)
-            #img_out += green
+            green = cv2.bitwise_and(img, img, mask=mask)
+            img_out += green
         return np.uint8((img_out))
+    
+def gstreamer_pipeline(
+    sensor_id=0,
+    capture_width=640,
+    capture_height=480,
+    display_width=640,
+    display_height=480,
+    framerate=30,
+    flip_method=2,
+):
+    return (
+        "nvarguscamerasrc sensor-id=%d !"
+        "video/x-raw(memory:NVMM), width=(int)%d, height=(int)%d, framerate=(fraction)%d/1 ! "
+        "nvvidconv flip-method=%d ! "
+        "video/x-raw, width=(int)%d, height=(int)%d, format=(string)BGRx ! "
+        "videoconvert ! "
+        "video/x-raw, format=(string)BGR ! appsink"
+        % (
+            sensor_id,
+            capture_width,
+            capture_height,
+            framerate,
+            flip_method,
+            display_width,
+            display_height,
+        )
+    )
+
+
+def show_camera():
+    window_title = "CSI Camera"
+    
+    od = ObjectDetection()
+    # To flip the image, modify the flip_method parameter (0 and 2 are the most common)
+    print(gstreamer_pipeline(flip_method=0))
+    video_capture = cv2.VideoCapture(gstreamer_pipeline(flip_method=2), cv2.CAP_GSTREAMER)
+    if video_capture.isOpened():
+        try:
+            #window_handle = cv2.namedWindow(window_title, cv2.WINDOW_AUTOSIZE)
+            while True:
+                ret_val, frame = video_capture.read()
+                od.process(frame)
+                # Check to see if the user closed the window
+                # Under GTK+ (Jetson Default), WND_PROP_VISIBLE does not work correctly. Under Qt it does
+                # GTK - Substitute WND_PROP_AUTOSIZE to detect if window has been closed by user
+               #if cv2.getWindowProperty(window_title, cv2.WND_PROP_AUTOSIZE) >= 0:
+                    #cv2.imshow(window_title, frame)
+                #else:
+                #    break 
+                #keyCode = cv2.waitKey(10) & 0xFF
+                # Stop the program on the ESC key or 'q'
+                #if keyCode == 27 or keyCode == ord('q'):
+                #    break
+        finally:
+            video_capture.release()
+            cv2.destroyAllWindows()
+    else:
+        print("Error: Unable to open camera")
+
 
 if __name__ == "__main__":
-    det_node = DetNode()
-    rospy.spin()           
-
+    show_camera()

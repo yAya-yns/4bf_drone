@@ -68,9 +68,10 @@ class CommNode:
         # # Transforms TODO: add back after velocity testing
         self.class_name_ = "CommNode::"
         self.max_vel = 0.2 #m/s
-        self.goal_height = 0.7 #m
+        self.goal_height = 1.6 #0.7 #m
+        self.detection_dist = 1.00 #m
 
-        self.goal_pose = get_pose(0, 0, self.goal_height)
+        # self.goal_pose = get_pose(0, 0, self.goal_height)
 
         self.ground_height = 0.05 #m
         self.launch = False
@@ -80,6 +81,7 @@ class CommNode:
         self.ang_tolerance = 0.17 #0.17 #tolerance of radian before moving to next
         self.waypoints = [] # collection of pose
         self.wiggle_dist = 0 # 0.25
+        self.wiggle_down = 0.25
         self.waypoints_arr = np.empty((0,3))
         self.waypoints_posearray = PoseArray()
         self.waypoints_recived = False
@@ -102,7 +104,7 @@ class CommNode:
         self.obstacle_detected = False
         self.obs_y = None
         self.img_width = 848
-        self.box_size = 1.0
+        self.box_size = 1.5
         self.mono_x = 0
         self.mono_y = 0
 
@@ -194,8 +196,8 @@ class CommNode:
         dir_vec = self.direct(curr.position, next_point.position)
         angle = deg_wrap(np.arctan2([dir_vec[1]], [dir_vec[0]])[0])
         quat = tf.transformations.quaternion_from_euler(0, 0, angle) 
-        # turn_point = get_pose(curr.position.x, curr.position.y, curr.position.z, quat[0], quat[1], quat[2], quat[3])
-        turn_point = get_pose(curr.position.x, curr.position.y, self.goal_height, quat[0], quat[1], quat[2], quat[3])
+        turn_point = get_pose(curr.position.x, curr.position.y, curr.position.z, quat[0], quat[1], quat[2], quat[3])
+        # turn_point = get_pose(curr.position.x, curr.position.y, self.goal_height, quat[0], quat[1], quat[2], quat[3])
         
         self.push_waypoint_front(turn_point)
         self.lock.release()
@@ -208,7 +210,7 @@ class CommNode:
         '''
         self.lock.acquire()
         print('generating wiggle points...')
-        dist = self.wiggle_dist 
+        dist = self.wiggle_dist
         curr = self.curr_pose
 
         # safe_point = get_pose(new_goal.position.x, new_goal.position.y, self.goal_height, curr.orientation.x, curr.orientation.y, curr.orientation.z, curr.orientation.w) 
@@ -219,7 +221,7 @@ class CommNode:
         for x in range(-1, 1, 1):
             for y in range(-1, 1, 1):
                 # TODO uncomment this for real. rn test with set z position
-                new = get_pose(new_goal.position.x + x*dist, new_goal.position.y + y*dist, new_goal.position.z + x*dist, curr.orientation.x, curr.orientation.y, curr.orientation.z, curr.orientation.w)
+                new = get_pose(new_goal.position.x + x*dist, new_goal.position.y + y*dist, new_goal.position.z + x*0.25, curr.orientation.x, curr.orientation.y, curr.orientation.z, curr.orientation.w)
                 # new = get_pose(new_goal.position.x + x*dist, new_goal.position.y + y*dist, self.goal_height)
                 self.push_waypoint_front(new)
 
@@ -234,7 +236,7 @@ class CommNode:
         #self.lock.acquire()
         print('generating new front point...')
 
-        safe_point = get_pose(new_goal.position.x, new_goal.position.y, self.goal_height, new_goal.orientation.x, new_goal.orientation.y, new_goal.orientation.z, new_goal.orientation.w) 
+        # safe_point = get_pose(new_goal.position.x, new_goal.position.y, self.goal_height, new_goal.orientation.x, new_goal.orientation.y, new_goal.orientation.z, new_goal.orientation.w) 
 
         new = [new_goal]
         # new = [safe_point]
@@ -279,48 +281,49 @@ class CommNode:
 
         self.waypoints.append(get_pose(0, 0, self.goal_height))
 
-        new = get_pose(3, 0.0, self.goal_height)
-        self.waypoints.append(new)
+        # new = get_pose(3, 0.0, self.goal_height)
+        # self.waypoints.append(new)
 
-        new = get_pose(0.0, 0.0, self.goal_height)
-        self.waypoints.append(new)
+        # new = get_pose(0.0, 0.0, self.goal_height)
+        # self.waypoints.append(new)
 
         return EmptyResponse()
 
     def handle_test(self):
         print('Test Requested. Your drone should perform the required tasks. Recording starts now.')
-        self.obstacle_detected = True
-        new = get_pose(0.0, 0.0, self.goal_height)
-        self.waypoints.append(new)
-        return EmptyResponse()
-        # if self.waypoints_arr == np.zeros((0,3)): # TODO: uncomment after velicity test
-        #     print('have not recieved waypoint array')
-        #     print('TEST FAIL')
-        #     return EmptyResponse()
-        # else:
-        #     for pose in self.waypoints_posearray.poses:
-        #         # self.create_wiggle(pose)
-        #         self.waypoints.append(pose)
+        #self.obstacle_detected = True
+        #new = get_pose(0.0, 0.0, self.goal_height)
+        # self.waypoints.append(new)
+        # 
+        # return EmptyResponse()
+        if self.waypoints_arr == np.zeros((0,3)): # TODO: uncomment after velicity test
+            print('have not recieved waypoint array')
+            print('TEST FAIL')
+            return EmptyResponse()
+        else:
+            for pose in self.waypoints_posearray.poses:
+                # self.create_wiggle(pose)
+                self.waypoints.append(pose)
 
-        # if len(self.waypoints) == self.waypoints_arr.shape[0] * 5:
-        #     print('waypoint creation success')
-        # else:
-        #     print('waypoint creation FAIL')
-        #     print('TEST FAIL')
-        #     return EmptyResponse()
+        if len(self.waypoints) == self.waypoints_arr.shape[0] * 5:
+            print('waypoint creation success')
+        else:
+            print('waypoint creation FAIL')
+            print('TEST FAIL')
+            return EmptyResponse()
 
-        # # check connection to realsense and can see odom messages
-        # if not self.active:
-        #     print("Cannot test, not connected yet")
-        #     return EmptyResponse()
+        # check connection to realsense and can see odom messages
+        if not self.active:
+            print("Cannot test, not connected yet")
+            return EmptyResponse()
             
-        # if self.curr_pose != None:
-        #     print('can recieve odom measurements')
-        #     return EmptyResponse()
-        # else:
-        #     print('CANNOT recieve odom measurements')
-        #     print('TEST FAIL')
-        #     return EmptyResponse()
+        if self.curr_pose != None:
+            print('can recieve odom measurements')
+            return EmptyResponse()
+        else:
+            print('CANNOT recieve odom measurements')
+            print('TEST FAIL')
+            return EmptyResponse()
       
 
     def handle_land(self):
@@ -377,7 +380,7 @@ class CommNode:
         if obs.z == -1.0:
             self.obstacle_detected = False
         else: 
-            if np.linalg.norm([obs.x, obs.y]) < 1.5:
+            if (np.linalg.norm([obs.x, obs.y]) < self.detection_dist) and (self.state_machine != 2):
                 # print("========================")
                 # print("===========:)===========")
                 # print("========================")
