@@ -3,7 +3,7 @@ import rospy
 import tf
 import geometry_msgs
 from std_srvs.srv import Empty, EmptyResponse
-from geometry_msgs.msg import Pose, PoseStamped, PoseArray, TransformStamped
+from geometry_msgs.msg import Pose, PoseStamped, PoseArray, TransformStamped, Point
 from std_msgs.msg import Float64
 from mavros_msgs.msg import State
 from mavros_msgs.srv import CommandBool, CommandBoolRequest, SetMode, SetModeRequest
@@ -57,7 +57,8 @@ class CommNode:
         # Pubs, Subs and Transforms
         self.setpoint_pub_ = rospy.Publisher("/mavros/setpoint_position/local", PoseStamped, queue_size=10)
         self.local_pose_sub = rospy.Subscriber("/mavros/local_position/pose", PoseStamped, callback = self.callback_pose)
-        self.obstacles_sub = rospy.Subscriber("/det/inview", Float64, callback = self.callback_obs)
+        #self.obstacles_sub = rospy.Subscriber("/det/inview", Float64, callback = self.callback_obs)
+        self.obstacles_sub = rospy.Subscriber("/obj/pos", Point, callback = self.callback_obs_mono)
         
         
         self.state_sub = rospy.Subscriber("/mavros/state", State, callback = self.state_cb)
@@ -101,7 +102,9 @@ class CommNode:
         self.obstacle_detected = False
         self.obs_y = None
         self.img_width = 848
-        self.box_size = 2
+        self.box_size = 1.0
+        self.mono_x = 0
+        self.mono_y = 0
 
     def direct(self, p1, p2):
         # going 1 --> 2
@@ -138,34 +141,38 @@ class CommNode:
         self.push_waypoint_front(self.curr_waypoint)
 
         curr = self.curr_pose
-        orth = np.array([self.curr_dir[1], -self.curr_dir[0]]) * self.box_size/2
-        dir_vec = self.curr_dir * self.box_size
+        orth = np.array([self.curr_dir[1], -self.curr_dir[0]]) * (self.box_size/2.0)
+        dir_vec = np.array([self.curr_dir[0], self.curr_dir[1]]) * self.box_size
 
-        xy_p = np.array([curr.position.x + orth[0], curr.position.y + orth[1], curr.position.z])
-        xy_m = np.array([curr.position.x - orth[0], curr.position.y - orth[1], curr.position.z])
+        xy_p = np.array([curr.position.x + orth[0], curr.position.y + orth[1] + self.mono_y, curr.position.z])
+        xy_m = np.array([curr.position.x + orth[0], curr.position.y - orth[1] - self.mono_y, curr.position.z])
 
-        # if np.linalg.norm(xy_p) > np.linalg.norm(xy_m):
+        if self.obs_y > 150: # np.linalg.norm(xy_p) > np.linalg.norm(xy_m):
             # out horizontally
-        print("generating in left")
-        point1 = get_pose(xy_m[0], xy_m[1], xy_m[2], self.curr_quat[0], self.curr_quat[1], self.curr_quat[2], self.curr_quat[3])
+            print("generating in left")
+            point1 = get_pose(xy_m[0], xy_m[1], xy_m[2], self.curr_quat[0], self.curr_quat[1], self.curr_quat[2], self.curr_quat[3])
             # out and front
-        point2 = get_pose(point1.position.x + dir_vec[0], point1.position.y + dir_vec[1], curr.position.z, self.curr_quat[0], self.curr_quat[1], self.curr_quat[2], self.curr_quat[3])   
+            point2 = get_pose(point1.position.x + dir_vec[0], point1.position.y + dir_vec[1] + self.mono_y, curr.position.z, self.curr_quat[0], self.curr_quat[1], self.curr_quat[2], self.curr_quat[3])   
             # center and front
-        point3 = get_pose(point2.position.x + orth[0], point2.position.y + orth[1], curr.position.z, self.curr_quat[0], self.curr_quat[1], self.curr_quat[2], self.curr_quat[3])
-            
-        #else:
-         #   print("generating in right")
+            point3 = get_pose(point2.position.x + orth[0], point2.position.y + orth[1] + self.mono_y, curr.position.z, self.curr_quat[0], self.curr_quat[1], self.curr_quat[2], self.curr_quat[3])
+                
+        else:
+            print("generating in right")
             # out horizontally
-          #  point1 = get_pose(xy_p[0], xy_p[1], xy_p[2], self.curr_quat[0], self.curr_quat[1], self.curr_quat[2], self.curr_quat[3])
+            point1 = get_pose(xy_p[0], xy_p[1], xy_p[2], self.curr_quat[0], self.curr_quat[1], self.curr_quat[2], self.curr_quat[3])
             # out and front
-           # point2 = get_pose(point1.position.x - dir_vec[0], point1.position.y - dir_vec[1], curr.position.z, self.curr_quat[0], self.curr_quat[1], self.curr_quat[2], self.curr_quat[3])
+            point2 = get_pose(point1.position.x + dir_vec[0], point1.position.y - dir_vec[1] - self.mono_y, curr.position.z, self.curr_quat[0], self.curr_quat[1], self.curr_quat[2], self.curr_quat[3])
             # center and front
-           # point3 = get_pose(point2.position.x - orth[0], point2.position.y - orth[1], curr.position.z, self.curr_quat[0], self.curr_quat[1], self.curr_quat[2], self.curr_quat[3])
+            point3 = get_pose(point2.position.x + orth[0], point2.position.y - orth[1] - self.mono_y, curr.position.z, self.curr_quat[0], self.curr_quat[1], self.curr_quat[2], self.curr_quat[3])
 
         # reverse order bc last in first out when pushing to front
         self.push_waypoint_front(point3)
         self.push_waypoint_front(point2)
         self.push_waypoint_front(point1)
+
+        if self.obs_x > 0.5:
+            start = get_pose(curr.position.x + (self.obs_x - 0.5), curr.position.y, curr.position.z, self.curr_quat[0], self.curr_quat[1], self.curr_quat[2], self.curr_quat[3])
+            self.push_waypoint_front(start)
 
         self.lock.release()
         return
@@ -264,11 +271,11 @@ class CommNode:
 
         self.waypoints.append(get_pose(0, 0, self.goal_height))
 
-        new = get_pose(2.5, 2.5, self.goal_height)
+        new = get_pose(3, 0.0, self.goal_height)
         self.waypoints.append(new)
 
-        #new = get_pose(3.5, 3.5, self.goal_height)
-        #self.waypoints.append(new)
+        new = get_pose(0.0, 0.0, self.goal_height)
+        self.waypoints.append(new)
 
         #############################
 
@@ -295,7 +302,7 @@ class CommNode:
         self.obstacle_detected = True
         new = get_pose(0.0, 0.0, self.goal_height)
         self.waypoints.append(new)
-        return EmptyResponse(0)
+        return EmptyResponse()
         # if self.waypoints_arr == np.zeros((0,3)): # TODO: uncomment after velicity test
         #     print('have not recieved waypoint array')
         #     print('TEST FAIL')
@@ -374,6 +381,22 @@ class CommNode:
             #print(obs.data)
             self.obs_y = obs.data
             self.obstacle_detected = True
+        return EmptyResponse()
+    
+    def callback_obs_mono(self, obs):
+        if obs.z == -1.0:
+            self.obstacle_detected = False
+        else: 
+            if obs.x < 0.7:
+            # print("========================")
+            # print("===========:)===========")
+            # print("========================")
+            #print(obs.data)
+                self.mono_y = obs.y
+                self.mono_x = obs.x
+                self.obstacle_detected = True
+            else:
+                self.obstacle_detected = False
         return EmptyResponse()
     
     def callback_vicon(self, vicon):
@@ -533,6 +556,7 @@ class CommNode:
                 print("===============PAUSED=============")
                 pose_to_compare = self.curr_pose
                 # check that the avoidance waypoints have been reached
+                print("===============%i/3 AVOID DONE=============" %self.obs_avoid_counter)
                 if self.obs_avoid_counter < 3:
                     if self.curr_waypoint is None or self.is_close(self.curr_waypoint, pose_to_compare): #last check should be redundant but better safe than sorry
                         if len(self.waypoints) > 0:
@@ -542,19 +566,13 @@ class CommNode:
                             self.obs_avoid_counter += 1
                             print("new waypoint : ", self.curr_waypoint.position.x, self.curr_waypoint.position.y, self.curr_waypoint.position.z)
                 else:
-                    if self.curr_waypoint is None or self.is_close(self.curr_waypoint, pose_to_compare): #last check should be redundant but better safe than sorry
-                        if len(self.waypoints) > 0:
-                            # reset variables and continue on path
-                            print("===============AVOIDANCE DONE=============")
-                            self.obs_avoid_counter = 0
-                            self.pause = False
-                            self.obstacle_detected = False
+                    # reset variables and continue on path
+                    print("===============AVOIDANCE DONE=============")
+                    self.obs_avoid_counter = 0
+                    self.pause = False
+                    self.obstacle_detected = False
 
-                            # and then pop next path waypoint
-                            self.curr_waypoint = self.waypoint_pop()
-                        
-                            print("new waypoint : ", self.curr_waypoint.position.x, self.curr_waypoint.position.y, self.curr_waypoint.position.z)
-                    
+                           
             self.set_position(self.curr_waypoint)
             print("CURR pose in local: ", round(self.curr_pose.position.x, 3), round(self.curr_pose.position.y, 3), round(self.curr_pose.position.z, 3))
             eul = np.round(tf.transformations.euler_from_quaternion((self.curr_pose.orientation.x, self.curr_pose.orientation.y, self.curr_pose.orientation.z, self.curr_pose.orientation.w)), 3)

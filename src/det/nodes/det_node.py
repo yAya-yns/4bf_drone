@@ -14,12 +14,14 @@ class DetNode:
 
         # Configurable params:
         self.counter_threshold_ = 5
-        self.inverse_disparity_threshold_ = 100.0
+        self.inverse_disparity_threshold_ = 85.0
         self.pixels_to_check_ = 250
-        self.downscale_factor_ = 4
+        self.downscale_factor_ = 7
+        self.focal_ = 286.4
 
-        self.num_disparities_ = 48
-        self.block_size_ = 33
+        self.num_disparities_ = 64
+        self.min_disparities_ = 16
+        self.block_size_ = 35
         self.visualize_ = False
         self.verbose_ = False
 
@@ -43,6 +45,9 @@ class DetNode:
         self.cv_bridge_ = CvBridge()
         self.stereo_bm_ = cv2.StereoBM_create(
             numDisparities=self.num_disparities_, blockSize=self.block_size_)
+        self.stereo_bm_.setMinDisparity(self.min_disparities_)
+        self.window_avg_ = [-1,-1]
+        self.window_counter_ = 0
 
         # Pubs, Subs and Timers
         rospy.Subscriber("/camera/fisheye1/image_raw", Image, \
@@ -73,7 +78,7 @@ class DetNode:
       orig_height = img_undistorted.shape[0]
       new_height = orig_height//self.downscale_factor_
       # take center of image of new height
-      self.img_1_ = img_undistorted[0:new_height, :]
+      self.img_1_ =  np.fliplr(img_undistorted[int(orig_height/2) - new_height :int(orig_height/2), 250:700])
       # convert from mono8 to bgr8
       #self.img_1_ = cv2.cvtColor(img_undistorted, cv2.COLOR_GRAY2BGR)
       self.img_1_ready_ = True
@@ -94,7 +99,7 @@ class DetNode:
       orig_height = img_undistorted.shape[0]
       new_height = orig_height//self.downscale_factor_
       # take center of image of new height
-      self.img_2_ = img_undistorted[0:new_height, :]
+      self.img_2_ = np.fliplr(img_undistorted[int(orig_height/2) - new_height :int(orig_height/2), 250:700])
       # convert from mono8 to bgr8
       #self.img_2_ = cv2.cvtColor(img_undistorted, cv2.COLOR_GRAY2BGR)
       self.img_2_ready_ = True
@@ -122,8 +127,6 @@ class DetNode:
         else:
             self.generateDisparity()
             msg.data = self.processDisparity()
-        if self.verbose_:
-            print(msg)
         self.od_pub_.publish(msg)  
 
         return
@@ -150,15 +153,15 @@ class DetNode:
 
     def generateDisparity(self):
         self.disparity_image_ = self.stereo_bm_.compute(\
-            self.img_1_, self.img_2_).astype(np.float32) / self.num_disparities_
+            self.img_2_, self.img_1_).astype(np.float32) / self.num_disparities_
 
-        self.disparity_image_ = self.disparity_image_[:,250:700]
+        self.disparity_image_ =  self.disparity_image_
 
         if self.visualize_:
             disparity_color = cv2.applyColorMap(
                 cv2.convertScaleAbs(self.disparity_image_, alpha=255 / 16.0), cv2.COLORMAP_JET)
             cv2.imshow("stereo", disparity_color)
-            cv2.imshow("raw", self.img_1_)
+            cv2.imshow("raw", self.img_2_)
             cv2.waitKey(1)
 
 
@@ -184,16 +187,18 @@ class DetNode:
             print("closest distance:")
             print(avg_distance)
 
-            print("y loc:")
-            print(np.average(max_y))
+            #print("y loc:")
+            #print(np.average(max_y))
 
         #print(opencv_image.shape)
         if avg_distance < self.inverse_disparity_threshold_:
           if self.window_ == True:
               self.counter_ += 1
+              self.window_avg_[self.window_counter_%2] = avg_y
+              self.window_counter_ += 1
 
               if self.counter_ > self.counter_threshold_ :
-                  return avg_y
+                  return sum(self.window_avg_)/2
               
           else:
             self.window_ = True
