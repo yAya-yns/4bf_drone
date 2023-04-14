@@ -150,7 +150,7 @@ class CommNode:
             
         # xy_p = np.array([curr.position.x + orth[0], curr.position.y + orth[1] + self.mono_y, curr.position.z])
         # xy_m = np.array([curr.position.x + orth[0], curr.position.y - orth[1] - self.mono_y, curr.position.z])
-        point_vec = -self.mono_y * orth_unit + (self.mono_x - 0.5) * dir_vec_unit + np.array([curr.position.x, curr.position.y])
+        point_vec = -self.mono_y * orth_unit + np.array([curr.position.x, curr.position.y])
         start = get_pose(point_vec[0], point_vec[1], curr.position.z, self.curr_quat[0], self.curr_quat[1], self.curr_quat[2], self.curr_quat[3])
 
         if self.mono_y < 0: # np.linalg.norm(xy_p) > np.linalg.norm(xy_m):
@@ -377,7 +377,7 @@ class CommNode:
         if obs.z == -1.0:
             self.obstacle_detected = False
         else: 
-            if np.linalg.norm([obs.x, obs.y]) < 0.7:
+            if np.linalg.norm([obs.x, obs.y]) < 1.5:
                 # print("========================")
                 # print("===========:)===========")
                 # print("========================")

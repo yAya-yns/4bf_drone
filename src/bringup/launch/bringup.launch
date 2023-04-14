@@ -12,7 +12,7 @@
   <!-- Launch comm_node -->
   <!--<node name="comm_node" pkg="comm_node" type="comm_node.py" output="screen" ></node>-->
   <!-- Launch det_node -->
-  <node name="monocular" pkg="monocular" type="monocular.py" output="screen" ></node>
+  <!-- <node name="monocular" pkg="monocular" type="monocular.py" output="screen" ></node>-->
 
 
   <!-- Launch tf publisher from odom to camera baselink-->

@@ -19,7 +19,7 @@ class DetNode:
         self.height_ = 480
         self.update_rate_ = 5
         self.const = 54.0
-        self.visualize = True
+        self.visualize = False
 
         self.intrinsics_ = np.array([[411.838509092687, 0.0, 289.815738517589],
                                     [0.0, 546.791755994532, 278.771000222492],
@@ -48,7 +48,7 @@ class DetNode:
         if not ready:
             print("image not yet ready")
             return
-        img_undist = self.undistortImage(img)
+        img_undist = self.undistortImage(img)[:240,:]
         img_undist = self.filter_color(img_undist, ["yellow", "green"])
 
         width, x, img_padded, det_ready = self.obstacleDetection(img_undist)
@@ -64,8 +64,8 @@ class DetNode:
             #cv2.imwrite('./img' + str(self.counter) + '.png', img_undist) 
             cv2.waitKey(1)
         msg = self.getWorldPoint(width, x)
-        if self.visualize:
-            print(msg)
+        #if self.visualize:
+        print(msg)
         self.od_pub_.publish(msg)
         return
     
@@ -205,31 +205,31 @@ class DetNode:
         hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
         img_out = np.zeros(img.shape)
         if 'yellow' in colors:
-            lower_yellow1 = np.array([15, 50, 10])
-            upper_yellow1 = np.array([35, 255, 255])
+            lower_yellow1 = np.array([20, 150, 150])
+            upper_yellow1 = np.array([30, 255, 255])
 
 
-            lower_yellow2 = np.array([25, 50, 50])
-            upper_yellow2 = np.array([35, 255, 255])
+            lower_yellow2 = np.array([15, 100, 125])
+            upper_yellow2 = np.array([25, 255, 255])
 
             # Create mask for yellow color range
             mask1 = cv2.inRange(hsv, lower_yellow1, upper_yellow1)
             mask2 = cv2.inRange(hsv, lower_yellow2, upper_yellow2)
-            mask = cv2.bitwise_or(mask1, mask2)
+            mask = cv2.bitwise_or(mask1, mask1)
 
 
             yellow = cv2.bitwise_and(img, img, mask=mask1)
             img_out += yellow
-        if 'green' in colors:
-            lower_green = np.array([30, 50, 50])
-            upper_green = np.array([90, 255, 255])
+        #if 'green' in colors:
+        #    lower_green = np.array([30, 50, 50])
+        #    upper_green = np.array([90, 255, 255])
 
             # Create a mask that isolates the green color from the rest of the image
-            mask = cv2.inRange(hsv, lower_green, upper_green)
+           # mask = cv2.inRange(hsv, lower_green, upper_green)
 
             # Apply the mask to the original image to get the green parts
-            green = cv2.bitwise_and(img, img, mask=mask)
-            img_out += green
+            #green = cv2.bitwise_and(img, img, mask=mask)
+            #img_out += green
         return np.uint8((img_out))
 
 if __name__ == "__main__":
