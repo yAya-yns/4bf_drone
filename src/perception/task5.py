@@ -26,7 +26,7 @@ def order_points(pts):
 def view(img, text=''):
     cv.imshow(text, img)
     cv.waitKey()
-    # exit()
+    exit()
 
 def unwrap(img : cv.Mat):
     '''
@@ -132,10 +132,10 @@ def classify_number(img):
 
 if __name__ == '__main__':
     # img_path = r'/Users/yefan/Downloads/task5-obj/0022.png'
-    # img_path = r'/Users/yefan/Downloads/task5-obj/0009.png'
+    img_path = r'src/perception/task5_test_data/0009.png'
     # img_path = r'/Users/yefan/Downloads/task5-obj/0027.png'
     # img_path = r'/Users/yefan/Downloads/task5-obj/0015.png'
-    img_path = r'/Users/yefan/Downloads/task5-obj/0004.png'
+    # img_path = r'/Users/yefan/Downloads/task5-obj/0004.png'
     img_obj = cv.imread(img_path, cv.IMREAD_GRAYSCALE)
     # view(img_obj)
     unwrapped = unwrap(img_obj)
