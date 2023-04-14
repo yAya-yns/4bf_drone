@@ -141,38 +141,46 @@ class CommNode:
         self.push_waypoint_front(self.curr_waypoint)
 
         curr = self.curr_pose
+        orth_unit = np.array([self.curr_dir[1], -self.curr_dir[0]])
+        dir_vec_unit = np.array([self.curr_dir[0], self.curr_dir[1]])
         orth = np.array([self.curr_dir[1], -self.curr_dir[0]]) * (self.box_size/2.0)
         dir_vec = np.array([self.curr_dir[0], self.curr_dir[1]]) * self.box_size
 
-        xy_p = np.array([curr.position.x + orth[0], curr.position.y + orth[1] + self.mono_y, curr.position.z])
-        xy_m = np.array([curr.position.x + orth[0], curr.position.y - orth[1] - self.mono_y, curr.position.z])
+        # start = get_pose(curr.position.x + (orth_unit[0] + self.mono_x), curr.position.y + (orth_unit[1] + self.mono_y), curr.position.z, self.curr_quat[0], self.curr_quat[1], self.curr_quat[2], self.curr_quat[3])
+            
+        # xy_p = np.array([curr.position.x + orth[0], curr.position.y + orth[1] + self.mono_y, curr.position.z])
+        # xy_m = np.array([curr.position.x + orth[0], curr.position.y - orth[1] - self.mono_y, curr.position.z])
+        point_vec = -self.mono_y * orth_unit + (self.mono_x - 0.5) * dir_vec_unit + np.array([curr.position.x, curr.position.y])
+        start = get_pose(point_vec[0], point_vec[1], curr.position.z, self.curr_quat[0], self.curr_quat[1], self.curr_quat[2], self.curr_quat[3])
 
-        if self.obs_y > 150: # np.linalg.norm(xy_p) > np.linalg.norm(xy_m):
+        if self.mono_y < 0: # np.linalg.norm(xy_p) > np.linalg.norm(xy_m):
             # out horizontally
             print("generating in left")
-            point1 = get_pose(xy_m[0], xy_m[1], xy_m[2], self.curr_quat[0], self.curr_quat[1], self.curr_quat[2], self.curr_quat[3])
+
+            # start = get_pose(curr.position.x + (orth_unit[0]*self.mono_y) + dir_vec_unit[0] * (self.mono_x - 0.5), curr.position.y - (orth_unit[0]*self.mono_y) + dir_vec_unit[1] * (self.mono_x - 0.5), curr.position.z, self.curr_quat[0], self.curr_quat[1], self.curr_quat[2], self.curr_quat[3])
+
+            point1 = get_pose(start.position.x + orth[0], start.position.y - orth[1], curr.position.z, self.curr_quat[0], self.curr_quat[1], self.curr_quat[2], self.curr_quat[3])
             # out and front
-            point2 = get_pose(point1.position.x + dir_vec[0], point1.position.y + dir_vec[1] + self.mono_y, curr.position.z, self.curr_quat[0], self.curr_quat[1], self.curr_quat[2], self.curr_quat[3])   
+            point2 = get_pose(point1.position.x + dir_vec[0], point1.position.y + dir_vec[1], curr.position.z, self.curr_quat[0], self.curr_quat[1], self.curr_quat[2], self.curr_quat[3])   
             # center and front
-            point3 = get_pose(point2.position.x + orth[0], point2.position.y + orth[1] + self.mono_y, curr.position.z, self.curr_quat[0], self.curr_quat[1], self.curr_quat[2], self.curr_quat[3])
+            point3 = get_pose(point2.position.x + orth[0], point2.position.y + orth[1], curr.position.z, self.curr_quat[0], self.curr_quat[1], self.curr_quat[2], self.curr_quat[3])
                 
         else:
             print("generating in right")
             # out horizontally
-            point1 = get_pose(xy_p[0], xy_p[1], xy_p[2], self.curr_quat[0], self.curr_quat[1], self.curr_quat[2], self.curr_quat[3])
+            # start = get_pose(curr.position.x + (orth_unit[0]*self.mono_y) + dir_vec_unit[0] * (self.mono_x - 0.5), curr.position.y + (orth_unit[0]*self.mono_y) - dir_vec_unit[1] * (self.mono_x - 0.5), curr.position.z, self.curr_quat[0], self.curr_quat[1], self.curr_quat[2], self.curr_quat[3])
+
+            point1 = get_pose(start.position.x + orth[0], start.position.y + orth[1], curr.position.z, self.curr_quat[0], self.curr_quat[1], self.curr_quat[2], self.curr_quat[3])
             # out and front
-            point2 = get_pose(point1.position.x + dir_vec[0], point1.position.y - dir_vec[1] - self.mono_y, curr.position.z, self.curr_quat[0], self.curr_quat[1], self.curr_quat[2], self.curr_quat[3])
+            point2 = get_pose(point1.position.x + dir_vec[0], point1.position.y - dir_vec[1], curr.position.z, self.curr_quat[0], self.curr_quat[1], self.curr_quat[2], self.curr_quat[3])
             # center and front
-            point3 = get_pose(point2.position.x + orth[0], point2.position.y - orth[1] - self.mono_y, curr.position.z, self.curr_quat[0], self.curr_quat[1], self.curr_quat[2], self.curr_quat[3])
+            point3 = get_pose(point2.position.x + orth[0], point2.position.y - orth[1], curr.position.z, self.curr_quat[0], self.curr_quat[1], self.curr_quat[2], self.curr_quat[3])
 
         # reverse order bc last in first out when pushing to front
         self.push_waypoint_front(point3)
         self.push_waypoint_front(point2)
         self.push_waypoint_front(point1)
-
-        if self.obs_x > 0.5:
-            start = get_pose(curr.position.x + (self.obs_x - 0.5), curr.position.y, curr.position.z, self.curr_quat[0], self.curr_quat[1], self.curr_quat[2], self.curr_quat[3])
-            self.push_waypoint_front(start)
+        self.push_waypoint_front(start)
 
         self.lock.release()
         return
@@ -277,24 +285,6 @@ class CommNode:
         new = get_pose(0.0, 0.0, self.goal_height)
         self.waypoints.append(new)
 
-        #############################
-
-        # new = get_pose(1.0, 1.0, self.goal_height)
-        # new_ang = self.create_turn_point(new, get_pose(0, 0, self.goal_height))
-        # new = get_pose(1.0, 1.0, self.goal_height, new_ang[0], new_ang[1], new_ang[2], new_ang[3])
-        # self.create_wiggle(new)
-
-        # new = get_pose(0.0, 0.0, self.goal_height)
-        # new_ang = self.create_turn_point(new, self.waypoints[-1])
-        # self.create_wiggle(new, self.waypoints[-1])
-
-        # self.goal_pose = get_pose(0.0, 0.0, self.goal_height)
-        # self.create_waypoints(self.goal_pose)
-        # new = get_pose(1.0, 1.0, self.goal_height)
-        # self.create_waypoints(new)
-        # new = get_pose(0.0, 0.0, self.goal_height)
-        # self.create_waypoints(new)
-
         return EmptyResponse()
 
     def handle_test(self):
@@ -387,11 +377,11 @@ class CommNode:
         if obs.z == -1.0:
             self.obstacle_detected = False
         else: 
-            if obs.x < 0.7:
-            # print("========================")
-            # print("===========:)===========")
-            # print("========================")
-            #print(obs.data)
+            if np.linalg.norm([obs.x, obs.y]) < 0.7:
+                # print("========================")
+                # print("===========:)===========")
+                # print("========================")
+                #print(obs.data)
                 self.mono_y = obs.y
                 self.mono_x = obs.x
                 self.obstacle_detected = True

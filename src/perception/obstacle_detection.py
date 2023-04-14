@@ -3,8 +3,8 @@ import cv2 as cv
 
 def view(img, text=''):
     '''for quickly debugging and viewing image'''
-    cv.imshow(text, img)
-    cv.waitKey()
+    cv2.imshow(text, img)
+    cv2.waitKey()
     # exit()
 
 def print_img_stat(img : np.ndarray, text=''):
@@ -17,12 +17,12 @@ def print_img_stat(img : np.ndarray, text=''):
     # print(f'var: {np.var(img, axis=-1)}')
 
 def compare_img(imgs):
-    # img_concat = cv.hconcat([np.uint8(img) for img in imgs])
-    img_concat = np.uint8(cv.hconcat(imgs))
+    # img_concat = cv2.hconcat([np.uint8(img) for img in imgs])
+    img_concat = np.uint8(cv2.hconcat(imgs))
     # Display concatenated image
-    cv.imshow('Side-by-Side Image', img_concat)
-    cv.waitKey(0)
-    cv.destroyAllWindows()
+    cv2.imshow('Side-by-Side Image', img_concat)
+    cv2.waitKey(0)
+    cv2.destroyAllWindows()
 
 def color_processing(img):
     highlight_scale=0.6
@@ -52,13 +52,13 @@ def highlight_adjust(img, scale, threshold):
     return img
 
 def normalization(img):
-    return cv.normalize(img,None,0,255,cv.NORM_MINMAX)
+    return cv2.normalize(img,None,0,255,cv2.NORM_MINMAX)
 
 def contrast_n_brightness_adjust(img, alpha, beta):
-    return cv.convertScaleAbs(img, alpha=alpha, beta=beta)
+    return cv2.convertScaleAbs(img, alpha=alpha, beta=beta)
 
 def filter_color(img, colors):
-    hsv = cv.cvtColor(img, cv.COLOR_BGR2HSV)
+    hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
     img_out = np.zeros(img.shape)
     if 'yellow' in colors:
         lower_yellow1 = np.array([20, 150, 150])
@@ -69,34 +69,34 @@ def filter_color(img, colors):
         upper_yellow2 = np.array([35, 255, 255])
 
         # Create mask for yellow color range
-        mask1 = cv.inRange(hsv, lower_yellow1, upper_yellow1)
-        mask2 = cv.inRange(hsv, lower_yellow2, upper_yellow2)
-        mask = cv.bitwise_or(mask1, mask2)
+        mask1 = cv2.inRange(hsv, lower_yellow1, upper_yellow1)
+        mask2 = cv2.inRange(hsv, lower_yellow2, upper_yellow2)
+        mask = cv2.bitwise_or(mask1, mask2)
 
 
-        yellow = cv.bitwise_and(img, img, mask=mask1)
+        yellow = cv2.bitwise_and(img, img, mask=mask1)
         img_out += yellow
     if 'green' in colors:
         lower_green = np.array([30, 50, 50])
         upper_green = np.array([90, 255, 255])
 
         # Create a mask that isolates the green color from the rest of the image
-        mask = cv.inRange(hsv, lower_green, upper_green)
+        mask = cv2.inRange(hsv, lower_green, upper_green)
 
         # Apply the mask to the original image to get the green parts
-        green = cv.bitwise_and(img, img, mask=mask)
+        green = cv2.bitwise_and(img, img, mask=mask)
         img_out += green
     return np.uint8(normalization(img_out))
 
 def process_video(input_name, output_name, display=False):
-    cap = cv.VideoCapture(input_name)
-    w = int(cap.get(cv.CAP_PROP_FRAME_WIDTH))
-    h = int(cap.get(cv.CAP_PROP_FRAME_HEIGHT))
-    fps = int(cap.get(cv.CAP_PROP_FPS))
+    cap = cv2.VideoCapture(input_name)
+    w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    fps = int(cap.get(cv2.CAP_PROP_FPS))
     
     # Define the output video codec and file name
-    fourcc = cv.VideoWriter_fourcc(*'XVID')
-    # out = cv.VideoWriter(output_name, fourcc, fps, (w, h))
+    fourcc = cv2.VideoWriter_fourcc(*'XVID')
+    # out = cv2.VideoWriter(output_name, fourcc, fps, (w, h))
     
     assert cap.isOpened(), "Error opening video file"
     
@@ -114,24 +114,24 @@ def process_video(input_name, output_name, display=False):
         # out.write(processed_frame)
 
         if display:
-            cv.imshow('Frame', processed_frame)
-            key = cv.waitKey(fps+3)
+            cv2.imshow('Frame', processed_frame)
+            key = cv2.waitKey(fps+3)
             if key == ord('q'):
                 break
 
     # Release the video capture object and close all windows
     # out.release()
     cap.release()
-    cv.destroyAllWindows()
+    cv2.destroyAllWindows()
     # print(f'obj_detected video saved as: {output_name}')
     return True
 
-def obstacle_detection(img : cv.Mat, color_process=True):
+def obstacle_detection(img : cv2.Mat, color_process=True):
     if color_process:
         img = color_processing(img)
-    img = cv.normalize(img, None, 0, 255, cv.NORM_MINMAX)
+    img = cv2.normalize(img, None, 0, 255, cv2.NORM_MINMAX)
     # view(img)
-    img_blur = cv.GaussianBlur(img, (5, 5), 2)
+    img_blur = cv2.GaussianBlur(img, (5, 5), 2)
     # view(img_blur, text='blur')
 
     # color_test = np.zeros(img.shape)
@@ -144,29 +144,29 @@ def obstacle_detection(img : cv.Mat, color_process=True):
     # print_img_stat(similarity, 'similarity')
     # view(similarity, text='similarity')
 
-    _, thresh = cv.threshold(similarity, 0.93, 1, cv.THRESH_BINARY)
+    _, thresh = cv2.threshold(similarity, 0.93, 1, cv2.THRESH_BINARY)
     # view(thresh)
     kernel = np.ones((10,10),np.uint8)
-    closing = cv.morphologyEx(thresh, cv.MORPH_CLOSE, kernel)
-    opening = cv.morphologyEx(closing, cv.MORPH_OPEN, kernel)
+    closing = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel)
+    opening = cv2.morphologyEx(closing, cv2.MORPH_OPEN, kernel)
     # view(opening)
 
     # print_img_stat(thresh)
     # view(thresh)
     pad = 10
-    padded = cv.copyMakeBorder(opening, pad, pad, 0, 0, cv.BORDER_CONSTANT, value=0)
-    img_padded = cv.copyMakeBorder(img, pad, pad, 0, 0, cv.BORDER_CONSTANT, value=0)
+    padded = cv2.copyMakeBorder(opening, pad, pad, 0, 0, cv2.BORDER_CONSTANT, value=0)
+    img_padded = cv2.copyMakeBorder(img, pad, pad, 0, 0, cv2.BORDER_CONSTANT, value=0)
     # view(padded)
 
-    thresh_blur = cv.GaussianBlur(padded, (5, 5), 5)
+    thresh_blur = cv2.GaussianBlur(padded, (5, 5), 5)
     # view(thresh_blur)
     
-    dst = cv.Canny(np.uint8(thresh_blur) * 255, 50, 200, None, 5)
+    dst = cv2.Canny(np.uint8(thresh_blur) * 255, 50, 200, None, 5)
     # view(dst)
 
-    contours, hierarchy = cv.findContours(dst, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_NONE)
+    contours, hierarchy = cv2.findContours(dst, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
     # print("Number of Contours found = " + str(len(contours)))
-    # cv.drawContours(img_padded, contours, -1, (255,255,255), 2)
+    # cv2.drawContours(img_padded, contours, -1, (255,255,255), 2)
     # view(img_padded)
 
     maxArea = 0
@@ -177,16 +177,16 @@ def obstacle_detection(img : cv.Mat, color_process=True):
     cnt_areas = []
     cx_position = []
     for i, cnt in enumerate(contours):  # Change - also provide index
-        area = cv.contourArea(cnt)
+        area = cv2.contourArea(cnt)
         # print(area)
-        # cv.drawContours(img_padded, contours, i, (255,255,255), 2)
+        # cv2.drawContours(img_padded, contours, i, (255,255,255), 2)
         # view(img_padded)
         if area > cutoff_area:
             filtered_contours.append(cnt)
             cnt_areas.append(area)
-            peri = cv.arcLength(cnt, True)
-            approx = cv.approxPolyDP(cnt,0.02*peri, True)
-            M = cv.moments(cnt)
+            peri = cv2.arcLength(cnt, True)
+            approx = cv2.approxPolyDP(cnt,0.02*peri, True)
+            M = cv2.moments(cnt)
             cX = int(M["m10"] / M["m00"])
             # cY = int(M["m01"] / M["m00"])
             # print(cX)
@@ -200,11 +200,11 @@ def obstacle_detection(img : cv.Mat, color_process=True):
     if index is None:
         return None, None, img_padded
     else:
-        rect = cv.minAreaRect(contours[index])
-        box = cv.boxPoints(rect)
+        rect = cv2.minAreaRect(contours[index])
+        box = cv2.boxPoints(rect)
         box = np.int0(box)
         # print(rect)
-        cv.drawContours(img_padded, [box], 0, (255, 255, 255), 2)
+        cv2.drawContours(img_padded, [box], 0, (255, 255, 255), 2)
         width = min(rect[1])    # assumption that most of the pillar is visible
         left_distance = rect[0][0]
         # print(width, left_distance)
@@ -219,11 +219,11 @@ def obstacle_detection(img : cv.Mat, color_process=True):
     diff = np.diff(sorted(cx_position))
     print(diff)
     if max(cnt_areas) > 0.6 * np.sum(cnt_areas) or np.max(diff) < 60:
-        rect = cv.minAreaRect(np.concatenate(contours))
-        box = cv.boxPoints(rect)
+        rect = cv2.minAreaRect(np.concatenate(contours))
+        box = cv2.boxPoints(rect)
         box = np.int0(box)
         print(rect)
-        cv.drawContours(img_padded, [box], 0, (255, 255, 255), 2)
+        cv2.drawContours(img_padded, [box], 0, (255, 255, 255), 2)
         width = min(rect[1])    # assumption that most of the pillar is visible
         left_distance = rect[0][0]
         # print(width, left_distance)
@@ -253,7 +253,7 @@ if __name__ == "__main__":
 
     assert os.path.isfile(img_path)
 
-    img = cv.imread(img_path, cv.IMREAD_COLOR)
+    img = cv2.imread(img_path, cv2.IMREAD_COLOR)
     # view(img, text='raw')
 
     # view(obstacle_detection(img)[2])
