@@ -129,7 +129,17 @@ def classify_number(img):
     mapping = [6, 4, 1]
     return mapping[h_line]
 
+def task5(img, rotate180 = False):
+    unwrapped = unwrap(img_obj)
+    if rotate180:
+        unwrapped = cv.rotate(unwrapped, cv.ROTATE_180)
+    chars = segment(unwrapped)
+    assert len(chars) == 4
+    ret = [classify_number(chars[i]) for i in range(len(chars))]
 
+    print(f'task 5 output: {ret}')
+    return ret
+    
 if __name__ == '__main__':
     # img_path = r'/Users/yefan/Downloads/task5-obj/0022.png'
     img_path = r'src/perception/task5_test_data/0009.png'
@@ -138,17 +148,14 @@ if __name__ == '__main__':
     # img_path = r'/Users/yefan/Downloads/task5-obj/0004.png'
     img_obj = cv.imread(img_path, cv.IMREAD_GRAYSCALE)
     # view(img_obj)
-    unwrapped = unwrap(img_obj)
-    unwrapped = cv.rotate(unwrapped, cv.ROTATE_180)
-    # view(unwrapped)
-    chars = segment(unwrapped)
-    if False:
-        view(chars[3])
-        print(classify_number(chars[3]))
-    else:
-        for i in range(0,4):
-            # view(chars[i])
-            print(classify_number(chars[i]))
+    task5(img_obj, rotate180=True)
+    # if False:
+    #     view(chars[3])
+    #     print(classify_number(chars[3]))
+    # else:
+    #     for i in range(0,4):
+    #         # view(chars[i])
+    #         print(classify_number(chars[i]))
 
     
     
