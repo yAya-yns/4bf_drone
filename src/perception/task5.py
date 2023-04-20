@@ -26,7 +26,7 @@ def order_points(pts):
 def view(img, text=''):
     cv.imshow(text, img)
     cv.waitKey()
-    exit()
+    # exit()
 
 def unwrap(img : cv.Mat):
     '''
@@ -75,12 +75,15 @@ def unwrap(img : cv.Mat):
         # Order the points correctly
         biggest = order_points(src)
         dst = order_points(dst)
+        # print(biggest)
+        # print(dst)
 
         # Get the perspective transform
         M = cv.getPerspectiveTransform(src, dst)
 
         # Warp the image
         img_shape = (width, height)
+        # print(img_shape)
         warped = cv.warpPerspective(img, M, img_shape, flags=cv.INTER_LINEAR)
 
     margins = 5
@@ -103,8 +106,9 @@ def segment(img):
     return [img_cropped[:, i * w//4 : (i+1) * w//4 + 1] for i in range(0, 4)]
 
 def classify_number(img):
+    padding = 20
+    img = img[padding:img.shape[0] - padding, padding:img.shape[1] - padding]
     edges = cv.Canny(img, 50, 150)
-    # view(edges)
     contours, hierarchy = cv.findContours(edges, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_NONE)
     # print("Number of Contours found = " + str(len(contours)))
 
@@ -119,7 +123,8 @@ def classify_number(img):
 
     #     cv.drawContours(blank,[box],0,(0,255,255),2)
     # view(blank)
-    # print(angles)
+    print(len(angles))
+    # view(img)
     if len(angles) != 4:
         mapping = {6 : 2, 2 : 3, 5 : 5}
         return mapping[len(angles)]
@@ -130,25 +135,35 @@ def classify_number(img):
     return mapping[h_line]
 
 def task5(img, rotate180 = False):
-    unwrapped = unwrap(img_obj)
     if rotate180:
-        unwrapped = cv.rotate(unwrapped, cv.ROTATE_180)
+        img = cv.rotate(img, cv.ROTATE_180)
+    unwrapped = unwrap(img)
+    view(unwrapped)
+    
     chars = segment(unwrapped)
     assert len(chars) == 4
     ret = [classify_number(chars[i]) for i in range(len(chars))]
-
-    print(f'task 5 output: {ret}')
+    if rotate180:
+        print(f'task 5 output: {ret[::-1]}')
+    else:
+        print(f'task 5 output: {ret}')
     return ret
     
 if __name__ == '__main__':
     # img_path = r'/Users/yefan/Downloads/task5-obj/0022.png'
-    img_path = r'src/perception/task5_test_data/0009.png'
+    # img_path = r'src/perception/task5_test_data/0009.png'
     # img_path = r'/Users/yefan/Downloads/task5-obj/0027.png'
     # img_path = r'/Users/yefan/Downloads/task5-obj/0015.png'
     # img_path = r'/Users/yefan/Downloads/task5-obj/0004.png'
+    img_path = r'/Users/yefan/Downloads/qwer.jpg'
+    # img_path = r'/Users/yefan/Downloads/test.jpg'
     img_obj = cv.imread(img_path, cv.IMREAD_GRAYSCALE)
+    # assert img_obj != None
     # view(img_obj)
-    task5(img_obj, rotate180=True)
+    try:
+        task5(img_obj, rotate180=False)
+    except:
+        task5(img_obj, rotate180=True)
     # if False:
     #     view(chars[3])
     #     print(classify_number(chars[3]))
